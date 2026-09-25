@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sudoku</title>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --muted: #6b7080;
+    --line: #c9c4b8;
+    --line-strong: #2d3240;
+    --given: #1f2430;
+    --user: #2f5fd0;
+    --hint: #0f8a6a;
+    --error: #d0392f;
+    --error-bg: #fbe3e0;
+    --sel: #cfdcfb;
+    --peer: #eceae3;
+    --same: #dfe7fb;
+    --btn: #f0ede5;
+    --btn-hover: #e4e0d5;
+    --accent: #2f5fd0;
+    --accent-ink: #ffffff;
+    --size: min(92vw, 72vh, 540px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --panel: #1f222a;
+      --ink: #e7e8ec;
+      --muted: #9095a3;
+      --line: #3a3e4a;
+      --line-strong: #a9aebb;
+      --given: #e7e8ec;
+      --user: #7ea2ff;
+      --hint: #4fd1a5;
+      --error: #ff7a6e;
+      --error-bg: #4a2522;
+      --sel: #334677;
+      --peer: #262a33;
+      --same: #2b3553;
+      --btn: #2a2e38;
+      --btn-hover: #353a46;
+      --accent: #5f86f0;
+      --accent-ink: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 24px 16px;
+    user-select: none;
+  }
+  .app {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .board-wrap { display: flex; flex-direction: column; gap: 10px; }
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 15px; color: var(--muted); width: var(--size);
+  }
+  .status strong { color: var(--ink); font-weight: 600; }
+  .board {
+    width: var(--size);
+    height: var(--size);
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    border: 3px solid var(--line-strong);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  .cell {
+    position: relative;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: calc(var(--size) / 9 * 0.56);
+    transition: background-color .08s;
+  }
+  .cell.c2, .cell.c5 { border-right: 2px solid var(--line-strong); }
+  .cell.c8 { border-right: none; }
+  .cell.r2, .cell.r5 { border-bottom: 2px solid var(--line-strong); }
+  .cell.r8 { border-bottom: none; }
+  .cell.peer { background: var(--peer); }
+  .cell.same { background: var(--same); }
+  .cell.selected { background: var(--sel); }
+  .cell.given { color: var(--given); font-weight: 600; }
+  .cell.user { color: var(--user); }
+  .cell.hinted { color: var(--hint); font-weight: 600; }
+  .cell.conflict, .cell.wrong { color: var(--error); }
+  .cell.wrong { background: var(--error-bg); }
+  .cell.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash {
+    0% { box-shadow: inset 0 0 0 4px var(--hint); }
+    100% { box-shadow: inset 0 0 0 0 var(--hint); }
+  }
+  .notes {
+    position: absolute; inset: 2px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    font-size: calc(var(--size) / 9 * 0.24);
+    color: var(--muted);
+    line-height: 1;
+  }
+  .notes span { display: flex; align-items: center; justify-content: center; }
+  .notes span.hl { color: var(--user); font-weight: 700; }
+
+  .side { display: flex; flex-direction: column; gap: 14px; width: min(92vw, 300px); }
+  .card {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
+  .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+  .row { display: flex; gap: 8px; }
+  button {
+    font: inherit;
+    border: none;
+    background: var(--btn);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    flex: 1;
+    transition: background-color .1s;
+  }
+  button:hover { background: var(--btn-hover); }
+  button.active { background: var(--accent); color: var(--accent-ink); }
+  button:disabled { opacity: .35; cursor: default; }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .pad button { font-size: 24px; padding: 8px 0; position: relative; }
+  .pad button small {
+    position: absolute; right: 6px; bottom: 3px; font-size: 11px; color: var(--muted);
+  }
+  .pad button.done { opacity: .3; }
+  .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tools button { font-size: 14px; }
+  .toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 10px; cursor: pointer; }
+  .msg {
+    min-height: 40px; font-size: 14px; color: var(--ink);
+    padding: 10px 12px; border-radius: 8px; background: var(--btn);
+  }
+  .msg:empty { display: none; }
+  .keys { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .keys kbd {
+    font-family: inherit; font-size: 11px;
+    border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--btn);
+  }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  .overlay.show { display: flex; }
+  .overlay .card { max-width: 340px; text-align: center; padding: 24px; }
+  .overlay h3 { margin: 0 0 8px; font-size: 26px; }
+  .overlay p { color: var(--muted); margin: 0 0 18px; }
+  .loading { opacity: .5; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="board-wrap">
+    <div class="status">
+      <span>Livello: <strong id="levelLabel">-</strong></span>
+      <span>Errori: <strong id="errCount">0</strong> · Suggerimenti: <strong id="hintCount">0</strong></span>
+      <span><strong id="timer">00:00</strong></span>
+    </div>
+    <div class="board" id="board"></div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <h2>Nuova partita</h2>
+      <div class="row">
+        <button data-level="easy">Facile</button>
+        <button data-level="medium">Medio</button>
+        <button data-level="hard">Difficile</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Numeri</h2>
+      <div class="pad" id="pad"></div>
+    </div>
+
+    <div class="card">
+      <h2>Strumenti</h2>
+      <div class="tools">
+        <button id="notesBtn">✎ Appunti: OFF</button>
+        <button id="eraseBtn">⌫ Cancella</button>
+        <button id="undoBtn">↶ Annulla</button>
+        <button id="hintBtn">💡 Suggerisci</button>
+        <button id="autoNotesBtn" style="grid-column: span 2">Compila tutti gli appunti</button>
+      </div>
+      <label class="toggle"><input type="checkbox" id="showErrors"> Evidenzia subito gli errori</label>
+    </div>
+
+    <div class="msg" id="msg"></div>
+
+    <div class="keys">
+      <kbd>1</kbd>–<kbd>9</kbd> inserisci · <kbd>Shift</kbd>+numero = appunto<br>
+      <kbd>N</kbd> modalità appunti · <kbd>Canc</kbd> cancella · <kbd>H</kbd> suggerisci<br>
+      <kbd>Ctrl</kbd>+<kbd>Z</kbd> annulla · frecce per spostarti
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="winOverlay">
+  <div class="card">
+    <h3>🎉 Risolto!</h3>
+    <p id="winText"></p>
+    <div class="row">
+      <button data-level="easy">Facile</button>
+      <button data-level="medium">Medio</button>
+      <button data-level="hard">Difficile</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Geometria della griglia ----------
+const ROW = i => Math.floor(i / 9);
+const COL = i => i % 9;
+const BOX = i => Math.floor(ROW(i) / 3) * 3 + Math.floor(COL(i) / 3);
+const UNITS = [];
+for (let r = 0; r < 9; r++) UNITS.push({ type: 'riga', cells: [...Array(9)].map((_, c) => r * 9 + c) });
+for (let c = 0; c < 9; c++) UNITS.push({ type: 'colonna', cells: [...Array(9)].map((_, r) => r * 9 + c) });
+for (let b = 0; b < 9; b++) {
+  const r0 = Math.floor(b / 3) * 3, c0 = (b % 3) * 3, cells = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) cells.push((r0 + r) * 9 + c0 + c);
+  UNITS.push({ type: 'riquadro', cells });
+}
+const PEERS = [...Array(81)].map((_, i) => {
+  const s = new Set();
+  for (let j = 0; j < 81; j++)
+    if (j !== i && (ROW(j) === ROW(i) || COL(j) === COL(i) || BOX(j) === BOX(i))) s.add(j);
+  return [...s];
+});
+const ALL = 0x3FE; // bit 1..9
+const bitCount = m => { let c = 0; while (m) { m &= m - 1; c++; } return c; };
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// ---------- Risolutore (backtracking con bitmask) ----------
+// Conta le soluzioni fino a "limit". Se fillRandom è true, restituisce una griglia completa casuale.
+function solve(grid, limit = 2, fillRandom = false) {
+  const g = grid.slice();
+  const rows = new Uint16Array(9), cols = new Uint16Array(9), boxes = new Uint16Array(9);
+  for (let i = 0; i < 81; i++) {
+    const v = g[i]; if (!v) continue;
+    const b = 1 << v;
+    if ((rows[ROW(i)] | cols[COL(i)] | boxes[BOX(i)]) & b) return { count: 0 };
+    rows[ROW(i)] |= b; cols[COL(i)] |= b; boxes[BOX(i)] |= b;
+  }
+  let count = 0, first = null;
+  (function rec() {
+    let best = -1, bestMask = 0, bestN = 10;
+    for (let i = 0; i < 81; i++) {
+      if (g[i]) continue;
+      const m = ALL & ~(rows[ROW(i)] | cols[COL(i)] | boxes[BOX(i)]);
+      const n = bitCount(m);
+      if (n === 0) return;
+      if (n < bestN) { best = i; bestMask = m; bestN = n; if (n === 1) break; }
+    }
+    if (best === -1) { count++; if (!first) first = g.slice(); return; }
+    const digits = [];
+    for (let v = 1; v <= 9; v++) if (bestMask & (1 << v)) digits.push(v);
+    if (fillRandom) shuffle(digits);
+    const r = ROW(best), c = COL(best), bx = BOX(best);
+    for (const v of digits) {
+      const b = 1 << v;
+      g[best] = v; rows[r] |= b; cols[c] |= b; boxes[bx] |= b;
+      rec();
+      g[best] = 0; rows[r] &= ~b; cols[c] &= ~b; boxes[bx] &= ~b;
+      if (count >= limit) return;
+    }
+  })();
+  return { count, solution: first };
+}
+
+// ---------- Candidati e risolutore "umano" (per graduare la difficoltà) ----------
+function candidates(grid) {
+  const cand = new Uint16Array(81);
+  for (let i = 0; i < 81; i++) {
+    if (grid[i]) continue;
+    let m = ALL;
+    for (const p of PEERS[i]) if (grid[p]) m &= ~(1 << grid[p]);
+    cand[i] = m;
+  }
+  return cand;
+}
+
+// Trova un passo logico: "singolo nudo" (una sola cifra possibile nella casella)
+// oppure "singolo nascosto" (una cifra può andare in un solo posto di riga/colonna/riquadro).
+function findSingle(grid, allowHidden) {
+  const cand = candidates(grid);
+  for (let i = 0; i < 81; i++) {
+    if (!grid[i] && bitCount(cand[i]) === 1) {
+      return { cell: i, value: Math.log2(cand[i]), kind: 'naked' };
+    }
+  }
+  if (!allowHidden) return null;
+  for (const unit of UNITS) {
+    for (let v = 1; v <= 9; v++) {
+      let spot = -1, n = 0;
+      for (const i of unit.cells) {
+        if (grid[i] === v) { n = -1; break; }
+        if (!grid[i] && (cand[i] & (1 << v))) { spot = i; n++; }
+      }
+      if (n === 1) return { cell: spot, value: v, kind: 'hidden', unit: unit.type };
+    }
+  }
+  return null;
+}
+
+function solvableBySingles(puzzle, allowHidden) {
+  const g = puzzle.slice();
+  for (;;) {
+    const step = findSingle(g, allowHidden);
+    if (!step) break;
+    g[step.cell] = step.value;
+  }
+  return g.every(v => v);
+}
+
+// ---------- Generatore ----------
+const LEVELS = {
+  easy:   { name: 'Facile',    target: 38, hidden: false },
+  medium: { name: 'Medio',     target: 30, hidden: true },
+  hard:   { name: 'Difficile', target: 22, hidden: null },
+};
+
+function generate(level) {
+  const cfg = LEVELS[level];
+  let fallback = null;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const solution = solve(Array(81).fill(0), 1, true).solution;
+    const puzzle = solution.slice();
+    let givens = 81;
+    // Rimozione simmetrica (i e 80-i), per un aspetto più "classico".
+    const order = shuffle([...Array(41).keys()]);
+    for (const i of order) {
+      if (givens <= cfg.target) break;
+      const j = 80 - i;
+      const vi = puzzle[i], vj = puzzle[j];
+      puzzle[i] = 0; puzzle[j] = 0;
+      const removed = i === j ? 1 : 2;
+      let ok = solve(puzzle, 2).count === 1;
+      // Facile e Medio: il puzzle deve restare risolvibile con le sole tecniche di base.
+      if (ok && cfg.hidden !== null) ok = solvableBySingles(puzzle, cfg.hidden);
+      if (ok) givens -= removed;
+      else { puzzle[i] = vi; puzzle[j] = vj; }
+    }
+    const result = { puzzle, solution };
+    if (cfg.hidden !== null) return result;
+    // Difficile: deve richiedere tecniche oltre i singoli.
+    if (!solvableBySingles(puzzle, true)) return result;
+    fallback = result;
+  }
+  return fallback;
+}
+
+// ---------- Stato di gioco ----------
+let S = null;          // stato corrente
+let selected = -1;
+let notesMode = false;
+let history = [];
+let timerId = null;
+
+const $ = id => document.getElementById(id);
+const boardEl = $('board');
+const cells = [];
+
+function newGame(level) {
+  if (S && !S.won && S.values.some((v, i) => v && !S.puzzle[i])) {
+    if (!confirm('Iniziare una nuova partita? La partita in corso andrà persa.')) return;
+  }
+  $('winOverlay').classList.remove('show');
+  document.body.classList.add('loading');
+  setMsg('Genero un nuovo sudoku…');
+  setTimeout(() => {
+    const { puzzle, solution } = generate(level);
+    S = {
+      level, puzzle, solution,
+      values: puzzle.slice(),
+      notes: Array(81).fill(0),
+      hinted: Array(81).fill(false),
+      elapsed: 0, errors: 0, hints: 0, won: false,
+    };
+    history = [];
+    selected = -1;
+    document.body.classList.remove('loading');
+    setMsg('');
+    startTimer();
+    render();
+    save();
+  }, 20);
+}
+
+function snapshot() {
+  history.push({ values: S.values.slice(), notes: S.notes.slice(), hinted: S.hinted.slice() });
+  if (history.length > 300) history.shift();
+}
+
+function undo() {
+  const h = history.pop();
+  if (!h || S.won) return;
+  S.values = h.values; S.notes = h.notes; S.hinted = h.hinted;
+  render(); save();
+}
+
+function isLocked(i) { return S.puzzle[i] !== 0 || S.hinted[i]; }
+
+function setValue(i, v) {
+  if (i < 0 || isLocked(i) || S.won) return;
+  snapshot();
+  if (S.values[i] === v) { S.values[i] = 0; }
+  else {
+    S.values[i] = v;
+    S.notes[i] = 0;
+    // Rimuove automaticamente l'appunto dalle caselle collegate.
+    for (const p of PEERS[i]) S.notes[p] &= ~(1 << v);
+    if (v !== S.solution[i]) S.errors++;
+  }
+  afterMove();
+}
+
+function toggleNote(i, v) {
+  if (i < 0 || S.values[i] || S.won) return;
+  snapshot();
+  S.notes[i] ^= (1 << v);
+  afterMove();
+}
+
+function erase(i) {
+  if (i < 0 || isLocked(i) || S.won) return;
+  if (!S.values[i] && !S.notes[i]) return;
+  snapshot();
+  S.values[i] = 0; S.notes[i] = 0;
+  afterMove();
+}
+
+function autoNotes() {
+  if (S.won) return;
+  snapshot();
+  const cand = candidates(S.values);
+  for (let i = 0; i < 81; i++) S.notes[i] = S.values[i] ? 0 : cand[i];
+  setMsg('Appunti compilati con tutti i candidati possibili.');
+  afterMove();
+}
+
+function hint() {
+  if (S.won) return;
+  // 1) Se ci sono errori, prima li segnala.
+  const wrong = [];
+  for (let i = 0; i < 81; i++) if (S.values[i] && S.values[i] !== S.solution[i]) wrong.push(i);
+  if (wrong.length) {
+    const i = wrong.includes(selected) ? selected : wrong[0];
+    selected = i;
+    render();
+    flash(i, true);
+    setMsg(`C'è un errore in riga ${ROW(i) + 1}, colonna ${COL(i) + 1}: il ${S.values[i]} non è corretto. Correggilo prima di continuare.`);
+    return;
+  }
+  // 2) Casella selezionata vuota → rivela quella. Altrimenti cerca il prossimo passo logico.
+  let target, text;
+  if (selected >= 0 && !S.values[selected]) {
+    target = selected;
+    text = explain(target, S.solution[target]);
+  } else {
+    const step = findSingle(S.values, true);
+    if (step) {
+      target = step.cell;
+      text = explain(target, step.value);
+    } else {
+      const empty = [];
+      for (let i = 0; i < 81; i++) if (!S.values[i]) empty.push(i);
+      target = empty[Math.floor(Math.random() * empty.length)];
+      text = `Qui va il ${S.solution[target]}. (Nessuna deduzione semplice disponibile in questo momento: servono tecniche avanzate.)`;
+    }
+  }
+  snapshot();
+  const v = S.solution[target];
+  S.values[target] = v;
+  S.notes[target] = 0;
+  S.hinted[target] = true;
+  for (const p of PEERS[target]) S.notes[p] &= ~(1 << v);
+  S.hints++;
+  selected = target;
+  setMsg(text);
+  afterMove();
+  flash(target);
+}
+
+function explain(i, v) {
+  const pos = `(riga ${ROW(i) + 1}, colonna ${COL(i) + 1})`;
+  const cand = candidates(S.values);
+  if (bitCount(cand[i]) === 1) return `Il ${v} è l'unico numero possibile in questa casella ${pos}: tutti gli altri sono già presenti in riga, colonna o riquadro.`;
+  for (const unit of UNITS) {
+    if (!unit.cells.includes(i)) continue;
+    const spots = unit.cells.filter(j => !S.values[j] && (cand[j] & (1 << v)));
+    if (spots.length === 1) return `In questa ${unit.type} il ${v} può andare solo qui ${pos}.`;
+  }
+  return `Qui va il ${v} ${pos}. Non è ancora deducibile con un passaggio semplice: prova a lavorare prima su altre caselle.`;
+}
+
+function afterMove() {
+  if (S.values.every((v, i) => v === S.solution[i])) {
+    S.won = true;
+    stopTimer();
+    $('winText').textContent = `Livello ${LEVELS[S.level].name} completato in ${fmt(S.elapsed)} con ${S.errors} errori e ${S.hints} suggerimenti.`;
+    setTimeout(() => $('winOverlay').classList.add('show'), 300);
+  }
+  render(); save();
+}
+
+// ---------- Rendering ----------
+function buildBoard() {
+  for (let i = 0; i < 81; i++) {
+    const d = document.createElement('div');
+    d.className = `cell r${ROW(i)} c${COL(i)}`;
+    d.addEventListener('mousedown', () => { selected = i; render(); });
+    boardEl.appendChild(d);
+    cells.push(d);
+  }
+  const pad = $('pad');
+  for (let v = 1; v <= 9; v++) {
+    const b = document.createElement('button');
+    b.innerHTML = `${v}<small></small>`;
+    b.dataset.v = v;
+    b.addEventListener('click', () => input(v, false));
+    pad.appendChild(b);
+  }
+}
+
+function render() {
+  if (!S) return;
+  const showErr = $('showErrors').checked;
+  const selVal = selected >= 0 ? S.values[selected] : 0;
+  const counts = Array(10).fill(0);
+  for (const v of S.values) if (v) counts[v]++;
+
+  for (let i = 0; i < 81; i++) {
+    const el = cells[i], v = S.values[i];
+    const cls = [`cell r${ROW(i)} c${COL(i)}`];
+    if (S.puzzle[i]) cls.push('given');
+    else if (S.hinted[i]) cls.push('hinted');
+    else if (v) cls.push('user');
+    if (selected >= 0) {
+      if (i === selected) cls.push('selected');
+      else if (selVal && v === selVal) cls.push('same');
+      else if (PEERS[selected].includes(i)) cls.push('peer');
+    }
+    if (v && !S.puzzle[i]) {
+      if (PEERS[i].some(p => S.values[p] === v)) cls.push('conflict');
+      if (showErr && v !== S.solution[i]) cls.push('wrong');
+    }
+    el.className = cls.join(' ');
+    if (v) el.textContent = v;
+    else if (S.notes[i]) {
+      let h = '<div class="notes">';
+      for (let n = 1; n <= 9; n++) {
+        const on = S.notes[i] & (1 << n);
+        h += `<span class="${on && n === selVal ? 'hl' : ''}">${on ? n : ''}</span>`;
+      }
+      el.innerHTML = h + '</div>';
+    } else el.textContent = '';
+  }
+
+  document.querySelectorAll('#pad button').forEach(b => {
+    const v = +b.dataset.v, left = 9 - counts[v];
+    b.querySelector('small').textContent = left > 0 ? left : '';
+    b.classList.toggle('done', left <= 0);
+  });
+  document.querySelectorAll('.side [data-level]').forEach(b => b.classList.toggle('active', b.dataset.level === S.level));
+  $('notesBtn').textContent = `✎ Appunti: ${notesMode ? 'ON' : 'OFF'}`;
+  $('notesBtn').classList.toggle('active', notesMode);
+  $('undoBtn').disabled = !history.length;
+  $('levelLabel').textContent = LEVELS[S.level].name;
+  $('errCount').textContent = S.errors;
+  $('hintCount').textContent = S.hints;
+  $('timer').textContent = fmt(S.elapsed);
+}
+
+function flash(i, isError) {
+  const el = cells[i];
+  el.classList.remove('flash');
+  void el.offsetWidth;
+  el.classList.add('flash');
+  if (isError) el.classList.add('wrong');
+}
+
+function setMsg(t) { $('msg').textContent = t; }
+
+// ---------- Timer ----------
+function fmt(s) {
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
+  const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+function startTimer() {
+  stopTimer();
+  timerId = setInterval(() => {
+    if (!S || S.won || document.hidden) return;
+    S.elapsed++;
+    $('timer').textContent = fmt(S.elapsed);
+    if (S.elapsed % 5 === 0) save();
+  }, 1000);
+}
+function stopTimer() { if (timerId) clearInterval(timerId); timerId = null; }
+
+// ---------- Salvataggio locale ----------
+function save() {
+  try { localStorage.setItem('sudoku-state', JSON.stringify(S)); } catch (e) {}
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem('sudoku-state'));
+    if (d && d.puzzle && d.puzzle.length === 81) return d;
+  } catch (e) {}
+  return null;
+}
+
+// ---------- Input ----------
+function input(v, forceNote) {
+  if (selected < 0) { setMsg('Seleziona prima una casella.'); return; }
+  if (notesMode || forceNote) toggleNote(selected, v);
+  else setValue(selected, v);
+}
+
+document.addEventListener('keydown', e => {
+  if (!S) return;
+  const m = e.code.match(/^(Digit|Numpad)([1-9])$/);
+  if (m) { e.preventDefault(); input(+m[2], e.shiftKey); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key;
+  if (k === 'Backspace' || k === 'Delete' || k === '0') { e.preventDefault(); erase(selected); }
+  else if (k === 'n' || k === 'N') { notesMode = !notesMode; render(); }
+  else if (k === 'h' || k === 'H') hint();
+  else if (k.startsWith('Arrow')) {
+    e.preventDefault();
+    if (selected < 0) selected = 40;
+    else {
+      let r = ROW(selected), c = COL(selected);
+      if (k === 'ArrowUp') r = (r + 8) % 9;
+      if (k === 'ArrowDown') r = (r + 1) % 9;
+      if (k === 'ArrowLeft') c = (c + 8) % 9;
+      if (k === 'ArrowRight') c = (c + 1) % 9;
+      selected = r * 9 + c;
+    }
+    render();
+  }
+});
+
+document.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => newGame(b.dataset.level)));
+$('notesBtn').addEventListener('click', () => { notesMode = !notesMode; render(); });
+$('eraseBtn').addEventListener('click', () => erase(selected));
+$('undoBtn').addEventListener('click', undo);
+$('hintBtn').addEventListener('click', hint);
+$('autoNotesBtn').addEventListener('click', autoNotes);
+$('showErrors').addEventListener('change', () => {
+  try { localStorage.setItem('sudoku-showErrors', $('showErrors').checked ? '1' : '0'); } catch (e) {}
+  render();
+});
+
+// ---------- Avvio ----------
+buildBoard();
+try { $('showErrors').checked = localStorage.getItem('sudoku-showErrors') === '1'; } catch (e) {}
+const saved = load();
+if (saved && !saved.won) { S = saved; startTimer(); render(); setMsg('Partita precedente ripristinata.'); }
+else newGame('easy');
+</script>
+</body>
+</html>
