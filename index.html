@@ -174,6 +174,29 @@
   .overlay h3 { margin: 0 0 8px; font-size: 26px; }
   .overlay p { color: var(--muted); margin: 0 0 18px; }
   .loading { opacity: .5; pointer-events: none; }
+  .record { color: var(--hint); font-weight: 600; margin: -8px 0 18px; }
+  .record:empty { display: none; }
+
+  .overlay .card.stats {
+    max-width: 640px; width: 100%; text-align: left; padding: 22px;
+    max-height: calc(100vh - 32px); overflow-y: auto; user-select: text;
+  }
+  .stats-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .stats-head h3 { font-size: 22px; margin: 0; }
+  .stats-head button { flex: none; padding: 6px 12px; }
+  .stats h4 { margin: 20px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .stats table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .stats th, .stats td { padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .stats th:first-child, .stats td:first-child { text-align: left; white-space: normal; }
+  .stats thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .stats td.num { font-variant-numeric: tabular-nums; }
+  .stats .won { color: var(--hint); }
+  .stats .lost { color: var(--muted); }
+  .stats .empty { color: var(--muted); font-size: 14px; }
+  .stats .note { font-size: 12px; color: var(--muted); margin-top: 14px; line-height: 1.5; }
+  .stats .row { margin-top: 16px; flex-wrap: wrap; }
+  .stats .row button { font-size: 14px; }
+  .tablewrap { overflow-x: auto; }
 </style>
 </head>
 <body>
@@ -194,6 +217,9 @@
         <button data-level="easy">Facile</button>
         <button data-level="medium">Medio</button>
         <button data-level="hard">Difficile</button>
+      </div>
+      <div class="row" style="margin-top: 8px">
+        <button class="statsBtn">📊 Statistiche</button>
       </div>
     </div>
 
@@ -228,11 +254,36 @@
   <div class="card">
     <h3>🎉 Risolto!</h3>
     <p id="winText"></p>
+    <p class="record" id="winRecord"></p>
     <div class="row">
       <button data-level="easy">Facile</button>
       <button data-level="medium">Medio</button>
       <button data-level="hard">Difficile</button>
     </div>
+    <div class="row" style="margin-top: 8px">
+      <button class="statsBtn">📊 Statistiche</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="statsOverlay">
+  <div class="card stats">
+    <div class="stats-head">
+      <h3>📊 Statistiche</h3>
+      <button id="statsClose">✕</button>
+    </div>
+    <div id="statsBody"></div>
+    <div class="row">
+      <button id="exportBtn">⬇ Esporta backup</button>
+      <button id="importBtn">⬆ Importa backup</button>
+      <button id="resetBtn">Azzera statistiche</button>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <p class="note">
+      Le statistiche sono salvate nel browser (localStorage) su questo PC: restano dopo la chiusura,
+      ma si perdono se cancelli i dati di navigazione o se apri il gioco con un altro browser.
+      Usa “Esporta backup” per conservarle in un file .json e “Importa backup” per ripristinarle.
+    </p>
   </div>
 </div>
 
@@ -393,6 +444,7 @@ function newGame(level) {
   if (S && !S.won && S.values.some((v, i) => v && !S.puzzle[i])) {
     if (!confirm('Iniziare una nuova partita? La partita in corso andrà persa.')) return;
   }
+  if (S && S.played && !S.won) statsAbandon(S);
   $('winOverlay').classList.remove('show');
   document.body.classList.add('loading');
   setMsg('Genero un nuovo sudoku…');
@@ -416,6 +468,7 @@ function newGame(level) {
 }
 
 function snapshot() {
+  if (!S.played) { S.played = true; statsStart(S); }
   history.push({ values: S.values.slice(), notes: S.notes.slice(), hinted: S.hinted.slice() });
   if (history.length > 300) history.shift();
 }
@@ -527,6 +580,10 @@ function afterMove() {
     S.won = true;
     stopTimer();
     $('winText').textContent = `Livello ${LEVELS[S.level].name} completato in ${fmt(S.elapsed)} con ${S.errors} errori e ${S.hints} suggerimenti.`;
+    const record = statsWin(S);
+    $('winRecord').textContent = !record ? ''
+      : record.prev === null ? '🏆 Primo record per questo livello!'
+      : `🏆 Nuovo record! (precedente: ${fmt(record.prev)})`;
     setTimeout(() => $('winOverlay').classList.add('show'), 300);
   }
   render(); save();
@@ -619,7 +676,7 @@ function fmt(s) {
 function startTimer() {
   stopTimer();
   timerId = setInterval(() => {
-    if (!S || S.won || document.hidden) return;
+    if (!S || S.won || document.hidden || $('statsOverlay').classList.contains('show')) return;
     S.elapsed++;
     $('timer').textContent = fmt(S.elapsed);
     if (S.elapsed % 5 === 0) save();
@@ -639,6 +696,167 @@ function load() {
   return null;
 }
 
+// ---------- Statistiche ----------
+// Salvate in localStorage sotto la chiave "sudoku-stats", separate dalla partita in corso.
+const STATS_KEY = 'sudoku-stats';
+const MAX_RECENT = 50;
+const emptyLevel = () => ({
+  played: 0, completed: 0, abandoned: 0,
+  noErrors: 0, perfect: 0,
+  best: null, totalTime: 0,
+  streak: 0, bestStreak: 0,
+});
+const emptyStats = () => ({
+  version: 1,
+  levels: { easy: emptyLevel(), medium: emptyLevel(), hard: emptyLevel() },
+  recent: [],
+});
+
+function normalizeStats(d) {
+  if (!d || typeof d !== 'object' || !d.levels || typeof d.levels !== 'object') return null;
+  const s = emptyStats();
+  for (const lv in s.levels) Object.assign(s.levels[lv], d.levels[lv] || {});
+  s.recent = Array.isArray(d.recent) ? d.recent.slice(0, MAX_RECENT) : [];
+  return s;
+}
+function loadStats() {
+  try { return normalizeStats(JSON.parse(localStorage.getItem(STATS_KEY))) || emptyStats(); }
+  catch (e) { return emptyStats(); }
+}
+function saveStats() {
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(STATS)); } catch (e) {}
+}
+let STATS = loadStats();
+
+function addRecent(game, result) {
+  STATS.recent.unshift({
+    date: Date.now(), level: game.level, result,
+    time: game.elapsed, errors: game.errors, hints: game.hints,
+  });
+  STATS.recent.length = Math.min(STATS.recent.length, MAX_RECENT);
+}
+
+// Una partita conta come "giocata" alla prima mossa.
+function statsStart(game) {
+  STATS.levels[game.level].played++;
+  saveStats();
+}
+
+function statsAbandon(game) {
+  const lv = STATS.levels[game.level];
+  lv.abandoned++;
+  lv.streak = 0;
+  addRecent(game, 'abandoned');
+  saveStats();
+}
+
+function statsWin(game) {
+  const lv = STATS.levels[game.level];
+  lv.completed++;
+  lv.totalTime += game.elapsed;
+  if (game.errors === 0) lv.noErrors++;
+  if (game.errors === 0 && game.hints === 0) lv.perfect++;
+  lv.streak = game.errors === 0 ? lv.streak + 1 : 0;
+  lv.bestStreak = Math.max(lv.bestStreak, lv.streak);
+  // Il record vale solo per le partite risolte senza suggerimenti.
+  let record = null;
+  if (game.hints === 0 && (lv.best === null || game.elapsed < lv.best)) {
+    record = { prev: lv.best };
+    lv.best = game.elapsed;
+  }
+  addRecent(game, 'won');
+  saveStats();
+  return record;
+}
+
+function renderStats() {
+  const keys = Object.keys(LEVELS);
+  const L = keys.map(k => STATS.levels[k]);
+  const sum = f => L.reduce((a, l) => a + l[f], 0);
+  const tot = {
+    played: sum('played'), completed: sum('completed'), abandoned: sum('abandoned'),
+    noErrors: sum('noErrors'), perfect: sum('perfect'), totalTime: sum('totalTime'),
+  };
+  const bests = L.map(l => l.best).filter(b => b !== null);
+  tot.best = bests.length ? Math.min(...bests) : null;
+  const pct = (a, b) => b ? ` <span class="lost">(${Math.round(a / b * 100)}%)</span>` : '';
+  const time = s => s === null || s === undefined ? '–' : fmt(s);
+  const avg = l => l.completed ? fmt(Math.round(l.totalTime / l.completed)) : '–';
+
+  const rows = [
+    ['Partite giocate', l => l.played],
+    ['Completate', l => l.completed + pct(l.completed, l.played)],
+    ['Abbandonate', l => l.abandoned],
+    ['Completate senza errori', l => l.noErrors + pct(l.noErrors, l.completed)],
+    ['Perfette (né errori né suggerimenti)', l => l.perfect + pct(l.perfect, l.completed)],
+    ['Tempo record (senza suggerimenti)', l => time(l.best)],
+    ['Tempo medio', avg],
+    ['Serie attuale senza errori', l => l.streak ?? '–'],
+    ['Serie migliore senza errori', l => l.bestStreak ?? '–'],
+    ['Tempo totale di gioco', l => fmt(l.totalTime)],
+  ];
+  let h = '<div class="tablewrap"><table><thead><tr><th></th>';
+  for (const k of keys) h += `<th>${LEVELS[k].name}</th>`;
+  h += '<th>Totale</th></tr></thead><tbody>';
+  for (const [label, f] of rows) {
+    h += `<tr><td>${label}</td>`;
+    for (const l of L) h += `<td class="num">${f(l)}</td>`;
+    h += `<td class="num">${f(tot)}</td></tr>`;
+  }
+  h += '</tbody></table></div>';
+
+  h += '<h4>Ultime partite</h4>';
+  if (!STATS.recent.length) h += '<p class="empty">Nessuna partita ancora registrata.</p>';
+  else {
+    h += '<div class="tablewrap"><table><thead><tr><th>Data</th><th>Livello</th><th>Esito</th><th>Tempo</th><th>Errori</th><th>Sugg.</th></tr></thead><tbody>';
+    for (const g of STATS.recent.slice(0, 15)) {
+      const d = new Date(g.date);
+      const date = d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' })
+        + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      const res = g.result === 'won'
+        ? `<span class="won">${g.errors === 0 && g.hints === 0 ? 'Perfetta' : 'Completata'}</span>`
+        : '<span class="lost">Abbandonata</span>';
+      h += `<tr><td>${date}</td><td>${LEVELS[g.level]?.name ?? '?'}</td><td>${res}</td>
+        <td class="num">${fmt(g.time)}</td><td class="num">${g.errors}</td><td class="num">${g.hints}</td></tr>`;
+    }
+    h += '</tbody></table></div>';
+  }
+  $('statsBody').innerHTML = h;
+}
+
+function openStats() { renderStats(); $('statsOverlay').classList.add('show'); }
+function closeStats() { $('statsOverlay').classList.remove('show'); }
+
+function exportStats() {
+  const blob = new Blob([JSON.stringify(STATS, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `sudoku-statistiche-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function importStats(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data = null;
+    try { data = normalizeStats(JSON.parse(reader.result)); } catch (e) {}
+    if (!data) { alert('Il file non contiene statistiche valide.'); return; }
+    if (!confirm('Sostituire le statistiche attuali con quelle del file?')) return;
+    STATS = data;
+    saveStats();
+    renderStats();
+  };
+  reader.readAsText(file);
+}
+
+function resetStats() {
+  if (!confirm('Azzerare tutte le statistiche? Questa operazione non si può annullare (a meno di avere un backup).')) return;
+  STATS = emptyStats();
+  saveStats();
+  renderStats();
+}
+
 // ---------- Input ----------
 function input(v, forceNote) {
   if (selected < 0) { setMsg('Seleziona prima una casella.'); return; }
@@ -647,6 +865,10 @@ function input(v, forceNote) {
 }
 
 document.addEventListener('keydown', e => {
+  if ($('statsOverlay').classList.contains('show')) {
+    if (e.key === 'Escape') closeStats();
+    return;
+  }
   if (!S) return;
   const m = e.code.match(/^(Digit|Numpad)([1-9])$/);
   if (m) { e.preventDefault(); input(+m[2], e.shiftKey); return; }
@@ -677,6 +899,16 @@ $('eraseBtn').addEventListener('click', () => erase(selected));
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('autoNotesBtn').addEventListener('click', autoNotes);
+document.querySelectorAll('.statsBtn').forEach(b => b.addEventListener('click', openStats));
+$('statsClose').addEventListener('click', closeStats);
+$('statsOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeStats(); });
+$('exportBtn').addEventListener('click', exportStats);
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', e => {
+  if (e.target.files[0]) importStats(e.target.files[0]);
+  e.target.value = '';
+});
+$('resetBtn').addEventListener('click', resetStats);
 $('showErrors').addEventListener('change', () => {
   try { localStorage.setItem('sudoku-showErrors', $('showErrors').checked ? '1' : '0'); } catch (e) {}
   render();
