@@ -204,7 +204,7 @@
   <div class="board-wrap">
     <div class="status">
       <span>Livello: <strong id="levelLabel">-</strong></span>
-      <span>Errori: <strong id="errCount">0</strong> · Suggerimenti: <strong id="hintCount">0</strong></span>
+      <span title="Numeri sbagliati inseriti finora, anche se poi corretti">Errori: <strong id="errCount">0</strong> · Suggerimenti: <strong id="hintCount">0</strong></span>
       <span><strong id="timer">00:00</strong></span>
     </div>
     <div class="board" id="board"></div>
@@ -235,7 +235,8 @@
         <button id="eraseBtn">⌫ Cancella</button>
         <button id="undoBtn">↶ Annulla</button>
         <button id="hintBtn">💡 Suggerisci</button>
-        <button id="autoNotesBtn" style="grid-column: span 2">Compila tutti gli appunti</button>
+        <button id="checkBtn">✔ Verifica</button>
+        <button id="autoNotesBtn">Compila appunti</button>
       </div>
       <label class="toggle"><input type="checkbox" id="showErrors"> Evidenzia subito gli errori</label>
     </div>
@@ -244,7 +245,7 @@
 
     <div class="keys">
       <kbd>1</kbd>–<kbd>9</kbd> inserisci · <kbd>Shift</kbd>+numero = appunto<br>
-      <kbd>N</kbd> modalità appunti · <kbd>Canc</kbd> cancella · <kbd>H</kbd> suggerisci<br>
+      <kbd>N</kbd> modalità appunti · <kbd>Canc</kbd> cancella · <kbd>H</kbd> suggerisci · <kbd>V</kbd> verifica<br>
       <kbd>Ctrl</kbd>+<kbd>Z</kbd> annulla · frecce per spostarti
     </div>
   </div>
@@ -435,6 +436,8 @@ let selected = -1;
 let notesMode = false;
 let history = [];
 let timerId = null;
+let checkMarks = new Set(); // caselle sbagliate mostrate da "Verifica" fino alla mossa successiva
+let warnShown = false;
 
 const $ = id => document.getElementById(id);
 const boardEl = $('board');
@@ -458,6 +461,7 @@ function newGame(level) {
       elapsed: 0, errors: 0, hints: 0, won: false,
     };
     history = [];
+    checkMarks.clear();
     selected = -1;
     document.body.classList.remove('loading');
     setMsg('');
@@ -468,6 +472,7 @@ function newGame(level) {
 }
 
 function snapshot() {
+  checkMarks.clear();
   if (!S.played) { S.played = true; statsStart(S); }
   history.push({ values: S.values.slice(), notes: S.notes.slice(), hinted: S.hinted.slice() });
   if (history.length > 300) history.shift();
@@ -476,6 +481,7 @@ function snapshot() {
 function undo() {
   const h = history.pop();
   if (!h || S.won) return;
+  checkMarks.clear();
   S.values = h.values; S.notes = h.notes; S.hinted = h.hinted;
   render(); save();
 }
@@ -585,8 +591,36 @@ function afterMove() {
       : record.prev === null ? '🏆 Primo record per questo livello!'
       : `🏆 Nuovo record! (precedente: ${fmt(record.prev)})`;
     setTimeout(() => $('winOverlay').classList.add('show'), 300);
+  } else {
+    const warning = deadEndWarning();
+    if (warning) setMsg(warning, true);
+    else if (warnShown) setMsg('');
   }
   render(); save();
+}
+
+// Segnala quando la griglia non può più essere completata: c'è per forza un errore.
+function deadEndWarning() {
+  if (S.values.every(v => v)) return 'La griglia è piena ma contiene errori: premi “Verifica” per vedere dove.';
+  const cand = candidates(S.values);
+  for (let i = 0; i < 81; i++) {
+    if (!S.values[i] && !cand[i]) {
+      return `Nella casella in riga ${ROW(i) + 1}, colonna ${COL(i) + 1} non può più andare nessun numero: c'è almeno un errore. Premi “Verifica” per vederlo.`;
+    }
+  }
+  return null;
+}
+
+function verify() {
+  if (S.won) return;
+  const wrong = [];
+  for (let i = 0; i < 81; i++) if (S.values[i] && S.values[i] !== S.solution[i]) wrong.push(i);
+  checkMarks = new Set(wrong);
+  render();
+  const n = wrong.length;
+  setMsg(n === 0 ? 'Finora è tutto corretto! 👍'
+    : n === 1 ? '1 casella sbagliata, evidenziata in rosso.'
+    : `${n} caselle sbagliate, evidenziate in rosso.`);
 }
 
 // ---------- Rendering ----------
@@ -628,7 +662,7 @@ function render() {
     }
     if (v && !S.puzzle[i]) {
       if (PEERS[i].some(p => S.values[p] === v)) cls.push('conflict');
-      if (showErr && v !== S.solution[i]) cls.push('wrong');
+      if ((showErr || checkMarks.has(i)) && v !== S.solution[i]) cls.push('wrong');
     }
     el.className = cls.join(' ');
     if (v) el.textContent = v;
@@ -665,7 +699,7 @@ function flash(i, isError) {
   if (isError) el.classList.add('wrong');
 }
 
-function setMsg(t) { $('msg').textContent = t; }
+function setMsg(t, isWarning = false) { $('msg').textContent = t; warnShown = isWarning; }
 
 // ---------- Timer ----------
 function fmt(s) {
@@ -878,6 +912,7 @@ document.addEventListener('keydown', e => {
   if (k === 'Backspace' || k === 'Delete' || k === '0') { e.preventDefault(); erase(selected); }
   else if (k === 'n' || k === 'N') { notesMode = !notesMode; render(); }
   else if (k === 'h' || k === 'H') hint();
+  else if (k === 'v' || k === 'V') verify();
   else if (k.startsWith('Arrow')) {
     e.preventDefault();
     if (selected < 0) selected = 40;
@@ -899,6 +934,7 @@ $('eraseBtn').addEventListener('click', () => erase(selected));
 $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('autoNotesBtn').addEventListener('click', autoNotes);
+$('checkBtn').addEventListener('click', verify);
 document.querySelectorAll('.statsBtn').forEach(b => b.addEventListener('click', openStats));
 $('statsClose').addEventListener('click', closeStats);
 $('statsOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeStats(); });
@@ -918,7 +954,13 @@ $('showErrors').addEventListener('change', () => {
 buildBoard();
 try { $('showErrors').checked = localStorage.getItem('sudoku-showErrors') === '1'; } catch (e) {}
 const saved = load();
-if (saved && !saved.won) { S = saved; startTimer(); render(); setMsg('Partita precedente ripristinata.'); }
+if (saved && !saved.won) {
+  S = saved;
+  startTimer();
+  render();
+  const warning = deadEndWarning();
+  setMsg(warning || 'Partita precedente ripristinata.', !!warning);
+}
 else newGame('easy');
 </script>
 </body>
