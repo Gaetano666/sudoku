@@ -25,6 +25,7 @@
     --accent: #2f5fd0;
     --accent-ink: #ffffff;
     --size: min(92vw, 72vh, 540px);
+    --warn: #c27a10;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -46,6 +47,7 @@
       --btn-hover: #353a46;
       --accent: #5f86f0;
       --accent-ink: #ffffff;
+      --warn: #f0b050;
     }
   }
   * { box-sizing: border-box; }
@@ -211,6 +213,7 @@
   .tc.m { color: var(--accent); background: var(--sel); }
   .tc.t { box-shadow: inset 0 0 0 3px var(--accent); background: var(--sel); }
   .tc.placed { color: var(--hint); }
+  .tc.hyp { color: var(--warn); }
   .tc.x::after {
     content: "✕"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     color: var(--error); font-size: calc(var(--tsize) / 9 * 0.6); font-weight: 700; opacity: .85;
@@ -1000,6 +1003,7 @@ const TUT_GRIDS = {
   point:  '070800950609105800500094600900500176356000248010000593002350700000008405065007380',
   triple: '000018603276500841813006500040680010600100000130025060381962754065301289920850136',
   xwing:  '457000200010000478020074030000019040195743682000580000030920850280000000509060321',
+  assurdo: '913004200004270091872100045391426050008030100020081930240017083130000400086342019',
 };
 const toGrid = str => str.split('').map(Number);
 const where = i => `riga ${ROW(i) + 1}, colonna ${COL(i) + 1}`;
@@ -1160,6 +1164,65 @@ function lessonXWing() {
   };
 }
 
+function lessonSkyscraper() {
+  const g = toGrid(TUT_GRIDS.assurdo), v = 6, rA = 2, rB = 6, kBase = 6;
+  const cand = candidates(g);
+  const spots = r => rowCells(r).filter(j => !g[j] && (cand[j] & (1 << v)));
+  const sA = spots(rA), sB = spots(rB);
+  const baseA = sA.find(j => COL(j) === kBase), baseB = sB.find(j => COL(j) === kBase);
+  const roofA = sA.find(j => j !== baseA), roofB = sB.find(j => j !== baseB);
+  const sees = (a, b) => a !== b && PEERS[a].includes(b);
+  const elim = [];
+  for (let j = 0; j < 81; j++)
+    if (!g[j] && j !== roofA && j !== roofB && sees(j, roofA) && sees(j, roofB) && (cand[j] & (1 << v))) elim.push([j, v]);
+  const left = elim.map(([j]) => `${where(j)}: ${joinD(digitsOf(cand[j]).filter(d => d !== v))}`);
+  const noteCells = [];
+  for (let j = 0; j < 81; j++) if (!g[j]) noteCells.push(j);
+  const rows = [rowCells(rA), rowCells(rB)], all4 = [baseA, roofA, baseB, roofB];
+  return {
+    title: 'Skyscraper', level: 'Esperto', grid: g, noteCells, noteDigit: v,
+    steps: [
+      { text: `Come per l'X-Wing, lavoriamo su un solo numero: il <b>${v}</b> (gli altri appunti sono nascosti). Nella riga ${rA + 1} il ${v} può andare in sole <b>due</b> caselle: ${sA.map(where).join(' oppure ')}.`, units: [rows[0]], target: sA },
+      { text: `Anche nella riga ${rB + 1} il ${v} ha solo due posti: ${sB.map(where).join(' oppure ')}.`, units: [rows[1]], target: sB },
+      { text: `Le due righe hanno un posto nella <b>stessa colonna</b>, la ${kBase + 1} (le "basi", evidenziate come colonna). Gli altri due posti, ${where(roofA)} e ${where(roofB)}, sono i "tetti". A differenza dell'X-Wing i tetti sono in colonne diverse.`, units: [colCells(kBase)], target: all4 },
+      { text: `Ci sono due casi. Se il ${v} della riga ${rA + 1} sta nella base (colonna ${kBase + 1}), allora la base della riga ${rB + 1} (stessa colonna) non può averlo, e il ${v} della riga ${rB + 1} sta nel suo tetto. Se invece il ${v} della riga ${rA + 1} sta nel suo tetto, abbiamo già un tetto col ${v}. <b>In ogni caso almeno uno dei due tetti ha il ${v}.</b>`, units: [colCells(kBase)], target: [roofA, roofB] },
+      { text: `Quindi le caselle che vedono <b>entrambi</b> i tetti non possono contenere il ${v}: ${elim.map(([j]) => where(j)).join(' e ')}. Le abbiamo evidenziate con il ${v} barrato.`, target: [roofA, roofB], elim },
+      { text: `Risultato: ${left.join(' · ')}. Nei sudoku difficili uno Skyscraper come questo sblocca altre deduzioni (nell'esempio della prossima lezione ne vedremo una).`, target: [roofA, roofB], elim, hideElim: true },
+    ],
+    check: { v, elim, roofs: [roofA, roofB], bases: [baseA, baseB] },
+  };
+}
+
+// Candidati già eliminati nelle lezioni precedenti (coppie nude e puntamenti) e dallo Skyscraper dell'esempio.
+const TUT_ASSURDO_REMOVED = [[3, 6], [14, 5], [15, 6], [43, 7], [44, 7], [45, 5], [45, 7], [53, 7], [67, 6]];
+
+function lessonAssurdo() {
+  const g = toGrid(TUT_GRIDS.assurdo);
+  const X = 48, Y = 47, P = 3, Q = 14, R = 23, Z = 41; // r6c4, r6c3, r1c4, r2c6, r3c6, r5c6
+  const cand = candidates(g);
+  TUT_ASSURDO_REMOVED.forEach(([j, d]) => { cand[j] &= ~(1 << d); });
+  const dd = j => digitsOf(cand[j]);
+  const [a, b] = dd(X);              // 5 e 7
+  const e1 = [[P, a], [Z, a]];        // il 5 sparisce da colonna 4 e riquadro 5
+  const e2 = [...e1, [Q, 8]];
+  const e3 = [...e2, [R, 3]];
+  const e4 = [...e3, [Z, 9]];
+  const hyp = [{ cell: X, d: a }];
+  return {
+    title: 'Ipotesi per assurdo', level: 'Esperto', grid: g, noteCells: [X, Y, P, Q, R, Z], removed: TUT_ASSURDO_REMOVED,
+    steps: [
+      { text: `Quando le tecniche dirette finiscono si può ragionare <b>per assurdo</b>: si fa un'ipotesi e si guarda se porta a una contraddizione. Se sì, l'ipotesi è falsa e vale l'altra. Partiamo dagli appunti già ripuliti (coppie nude e Skyscraper sul 6). Nella ${where(X)} i candidati sono <b>${a}</b> e <b>${b}</b>: cosa succede se fosse ${a}?`, target: [X], hl: [a] },
+      { text: `<b>Ipotesi: ${where(X)} = ${a}.</b> Cancelliamo il ${a} dalle caselle che la vedono: ${where(P)} (stessa colonna) ${dd(P).includes(a) ? `resta con ${joinD(dd(P).filter(d => d !== a))}` : ''} e ${where(Z)} (stesso riquadro) resta con ${joinD(dd(Z).filter(d => d !== a))}.`, target: [X], place: hyp, hyp: true, elim: e1 },
+      { text: `In ${where(P)} resta il solo candidato <b>8</b>. Quell'8 sta nel riquadro in alto al centro, quindi si cancella da ${where(Q)}, che resta con il solo <b>3</b>.`, target: [P], place: [...hyp, { cell: P, d: 8 }], hyp: true, elim: e2 },
+      { text: `Il 3 in ${where(Q)} sta nella colonna 6: si cancella dalla ${where(R)}, che resta con il solo <b>9</b>.`, target: [Q], place: [...hyp, { cell: P, d: 8 }, { cell: Q, d: 3 }], hyp: true, elim: e3 },
+      { text: `Ora guarda la ${where(Z)}: il ${a} era già cancellato (stesso riquadro di ${where(X)}) e il 9 si cancella ora perché è nella colonna 6 insieme a ${where(R)}. <b>Non resta nessun numero possibile</b>: contraddizione!`, target: [Z], place: [...hyp, { cell: P, d: 8 }, { cell: Q, d: 3 }, { cell: R, d: 9 }], hyp: true, elim: e4 },
+      { text: `L'ipotesi porta a un'impossibilità, quindi è falsa: la ${where(X)} non può essere ${a}. Resta il <b>${b}</b>, e di conseguenza la ${where(Y)} è <b>${a}</b>. Da qui il sudoku prosegue con i soli singoli.`, target: [X, Y], place: [{ cell: X, d: b }, { cell: Y, d: a }] },
+      { text: `Non è "tirare a indovinare": non si scrive mai un numero perché sembra giusto, ma solo dopo aver dimostrato che l'alternativa è impossibile. Conviene provare su caselle con <b>due soli candidati</b> e catene corte, e usare questa tecnica solo quando le altre non bastano.` },
+    ],
+    check: { X, Y, a, b },
+  };
+}
+
 function lessonTips() {
   return {
     title: 'Consigli', level: '', grid: null,
@@ -1167,7 +1230,7 @@ function lessonTips() {
       { text: '<b>Parti dai numeri più frequenti.</b> Se il 5 compare già 7 volte nella griglia, è facile trovare dove vanno gli ultimi due.' },
       { text: '<b>Cerca prima i singoli.</b> Guarda le caselle con un solo numero possibile (singolo nudo) e i numeri con un solo posto in un riquadro, riga o colonna (singolo nascosto).' },
       { text: '<b>Dopo ogni numero inserito, riguarda le vicinanze.</b> Un numero nuovo toglie candidati a tutta la sua riga, colonna e riquadro e spesso sblocca altre caselle.' },
-      { text: '<b>Quando sei bloccato, usa gli appunti.</b> Premi ✎ Compila appunti, poi cerca coppie e terne nude, puntamenti e, nei casi più duri, X-Wing per ridurre i candidati.' },
+      { text: '<b>Quando sei bloccato, usa gli appunti.</b> Premi ✎ Compila appunti, poi cerca coppie e terne nude, puntamenti e, nei casi più duri, X-Wing e Skyscraper per ridurre i candidati. Come ultima risorsa, ragiona per assurdo.' },
       { text: '<b>Non tirare a indovinare.</b> Ogni sudoku ha una sola soluzione e si risolve con la logica. Se hai un dubbio, ✔ Verifica ti mostra gli errori e 💡 Suggerisci ti spiega il prossimo passo.' },
     ],
   };
@@ -1176,7 +1239,7 @@ function lessonTips() {
 let tut = null; // { lessons, li, si, cells }
 
 function buildLessons() {
-  return [lessonRules(), lessonNaked(), lessonHidden(), lessonPair(), lessonPoint(), lessonTriple(), lessonXWing(), lessonTips()];
+  return [lessonRules(), lessonNaked(), lessonHidden(), lessonPair(), lessonPoint(), lessonTriple(), lessonXWing(), lessonSkyscraper(), lessonAssurdo(), lessonTips()];
 }
 
 function renderTutorial() {
@@ -1192,6 +1255,8 @@ function renderTutorial() {
   board.style.display = lesson.grid ? '' : 'none';
   if (lesson.grid) {
     const g = lesson.grid, cand = candidates(g);
+    (lesson.removed || []).forEach(([j, d]) => { cand[j] &= ~(1 << d); });
+    const placeMap = new Map((Array.isArray(step.place) ? step.place : step.place ? [step.place] : []).map(q => [q.cell, q.d]));
     const inList = (list, i) => !!list && list.includes(i);
     const unitSet = new Set((step.units || []).flat());
     const elimSet = new Set((step.elim || []).map(e => e[0] * 10 + e[1]));
@@ -1211,7 +1276,7 @@ function renderTutorial() {
       if (step.match && g[i] === step.match) cls.push('m');
       if (inList(step.blocked, i)) cls.push('x');
       let html = '';
-      if (step.place && step.place.cell === i) { html = step.place.d; cls.push('placed'); }
+      if (placeMap.has(i)) { html = placeMap.get(i); cls.push(step.hyp ? 'hyp' : 'placed'); }
       else if (g[i]) html = g[i];
       else if (step.custom && step.custom.cell === i) {
         const c = step.custom;
