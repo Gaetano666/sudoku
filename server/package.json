@@ -1,0 +1,19 @@
+{
+  "name": "sudoku-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server del Sudoku: profili, partite in classifica e classifiche (Redis)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.8",
+    "fastify": "^5.12.7",
+    "ioredis": "^6.0.0"
+  }
+}
