@@ -3,6 +3,8 @@ const Fastify = require('fastify');
 const fastifyStatic = require('@fastify/static');
 const core = require('../../public/sudoku-core.js');
 const sec = require('./security');
+const { isBlockedName } = require('./blocked');
+const { deleteUser } = require('./users');
 
 const LEVELS = Object.keys(core.LEVELS);
 const PERIODS = ['all', 'week', 'month'];
@@ -64,10 +66,21 @@ function buildApp({ redis, config, now = Date.now, logger = false }) {
   let dummyHash = null;
   const getDummy = async () => (dummyHash ||= await sec.hashPin(config.secret, '000000'));
 
+  // Niente script o stili "inline" e nessuna risorsa esterna: limita molto i danni di un eventuale XSS.
+  // Quando aggiungeremo la pubblicità questa politica andrà allargata ai domini dell'ad network.
+  const CSP = [
+    "default-src 'self'", "script-src 'self'", "style-src 'self'", "img-src 'self' data:",
+    "connect-src 'self'", "font-src 'self'", "object-src 'none'", "base-uri 'none'",
+    "form-action 'self'", "frame-ancestors 'none'",
+  ].join('; ');
+
   app.addHook('onSend', async (req, reply) => {
+    reply.header('Content-Security-Policy', CSP);
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
-    reply.header('X-Frame-Options', 'SAMEORIGIN');
+    reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+    reply.header('Cross-Origin-Opener-Policy', 'same-origin');
+    if (req.headers['x-forwarded-proto'] === 'https') reply.header('Strict-Transport-Security', 'max-age=31536000');
     if (req.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store');
   });
 
@@ -100,6 +113,7 @@ function buildApp({ redis, config, now = Date.now, logger = false }) {
     if (!email) return err(reply, 400, 'bad_email', 'Email non valida');
     if (!sec.isValidPin(req.body.pin)) return err(reply, 400, 'bad_pin', 'Il PIN deve avere 6 cifre');
     if (!name) return err(reply, 400, 'bad_name', 'Nome non valido: 3-16 caratteri tra lettere, numeri, spazio, punto, trattino e underscore');
+    if (isBlockedName(name.display)) return err(reply, 400, 'bad_name', 'Nome non consentito: scegline un altro');
 
     const id = sec.newId();
     const eh = sec.emailHash(config.secret, email);
@@ -173,18 +187,7 @@ function buildApp({ redis, config, now = Date.now, logger = false }) {
     if (!sec.isValidPin(req.body.pin) || !(await sec.verifyPin(config.secret, req.body.pin, user.pin))) {
       return err(reply, 401, 'bad_credentials', 'PIN errato');
     }
-    const sessions = await redis.smembers(`usess:${me.id}`);
-    const tx = redis.multi().del(`user:${me.id}`, `name:${user.nameKey}`, `email:${user.emailHash}`, `usess:${me.id}`);
-    for (const h of sessions) tx.del(`sess:${h}`);
-    await tx.exec();
-    // Le chiavi restituite da SCAN includono il prefisso di ioredis: va tolto prima di riusarle.
-    const prefix = redis.options.keyPrefix || '';
-    let cursor = '0';
-    do {
-      const [next, keys] = await redis.scan(cursor, 'MATCH', `${prefix}lb:*`, 'COUNT', 200);
-      cursor = next;
-      for (const key of keys) await redis.zrem(key.slice(prefix.length), me.id);
-    } while (cursor !== '0');
+    await deleteUser(redis, me.id);
     return { ok: true };
   });
 

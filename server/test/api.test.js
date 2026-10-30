@@ -263,3 +263,32 @@ test('settimana ISO', () => {
   assert.equal(isoWeekKey(new Date(Date.UTC(2026, 11, 31))), '2026-W53');
   assert.equal(isoWeekKey(new Date(Date.UTC(2025, 11, 29))), '2026-W01');
 });
+
+test('nomi non consentiti e CSP stretta', async () => {
+  const { app } = await makeApp();
+  for (const name of ['Ciao M3rd@', 'F U C K', 'Vaffanculo1']) {
+    const { res } = await register(app, { email: `${Math.random()}@example.com`, name });
+    assert.equal(res.statusCode, 400, name);
+    assert.equal(json(res).error, 'bad_name');
+  }
+  // Cognomi comuni che contengono parole "pericolose" devono passare.
+  assert.equal((await register(app, { email: 'troiano@example.com', name: 'Troiano' })).res.statusCode, 200);
+  assert.equal((await register(app, { email: 'scarpa@example.com', name: 'Giulia Scarpa' })).res.statusCode, 200);
+
+  for (const url of ['/', '/api/health', '/privacy.html']) {
+    const res = await app.inject({ method: 'GET', url });
+    assert.equal(res.statusCode, 200, url);
+    const csp = res.headers['content-security-policy'];
+    assert.match(csp, /default-src 'self'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.ok(!csp.includes('unsafe-inline') && !csp.includes('unsafe-eval'));
+  }
+  const https = await app.inject({ method: 'GET', url: '/api/health', headers: { 'x-forwarded-proto': 'https' } });
+  assert.match(https.headers['strict-transport-security'], /max-age=/);
+  assert.equal(json(await app.inject({ method: 'GET', url: '/api/health' })).ok, true);
+  assert.equal((await app.inject({ method: 'GET', url: '/robots.txt' })).statusCode, 200);
+  // La pagina non deve contenere script o stili inline (la CSP li bloccherebbe).
+  const html = (await app.inject({ method: 'GET', url: '/' })).body;
+  assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/i.test(html), 'script inline');
+  assert.ok(!/<style[\s>]/i.test(html) && !/\sstyle="/i.test(html), 'stile inline');
+});
