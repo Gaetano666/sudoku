@@ -998,6 +998,8 @@ const TUT_GRIDS = {
   hidden: '000002000460009800030000049098005430600070008073400520310000060004600092000900000',
   pair:   '075304100042185007080706000400239700000478000007651002000507090700943500004802370',
   point:  '070800950609105800500094600900500176356000248010000593002350700000008405065007380',
+  triple: '000018603276500841813006500040680010600100000130025060381962754065301289920850136',
+  xwing:  '457000200010000478020074030000019040195743682000580000030920850280000000509060321',
 };
 const toGrid = str => str.split('').map(Number);
 const where = i => `riga ${ROW(i) + 1}, colonna ${COL(i) + 1}`;
@@ -1107,6 +1109,57 @@ function lessonPoint() {
   };
 }
 
+function lessonTriple() {
+  const g = toGrid(TUT_GRIDS.triple), u = 0, cells3 = [0, 1, 2];
+  const cand = candidates(g), unit = UNITS[u];
+  const empt = unit.cells.filter(j => !g[j]);
+  const tri = digitsOf(cand[0] | cand[1] | cand[2]);
+  const elim = [];
+  for (const j of empt) if (!cells3.includes(j)) for (const d of tri) if (cand[j] & (1 << d)) elim.push([j, d]);
+  const rest = empt.filter(j => !cells3.includes(j)).map(j => {
+    const left = digitsOf(cand[j]).filter(d => !tri.includes(d));
+    return `${where(j)}: ${joinD(left)}`;
+  });
+  const T = joinD(tri);
+  return {
+    title: 'Terna nuda', level: 'Avanzato', grid: g, noteCells: empt,
+    steps: [
+      { text: `È la coppia nuda estesa a tre caselle. Nella riga ${u + 1} le caselle vuote mostrano i numeri ancora possibili (i candidati).`, units: [unit.cells] },
+      { text: `Guarda le tre caselle evidenziate (${cells3.map(where).join('; ')}): insieme usano <b>solo</b> i numeri <b>${T}</b>. Non serve che ogni casella li abbia tutti e tre. È una <b>terna nuda</b>.`, units: [unit.cells], target: cells3, hl: tri },
+      { text: `Tre caselle e tre numeri: ognuna prenderà uno di questi numeri e alla fine li useranno tutti e tre. Quindi nessun'altra casella della riga può contenere ${T}.`, units: [unit.cells], target: cells3, hl: tri },
+      { text: `Cancelliamo dunque ${joinD(elim.map(e => e[1]))} dalle altre caselle della riga (barrati in rosso): ${elim.map(e => `il ${e[1]} in ${where(e[0])}`).join(' e ')}.`, units: [unit.cells], target: cells3, elim },
+      { text: `Risultato: nelle altre caselle della riga restano ${rest.join(' · ')}. Meno candidati, quindi deduzioni più facili.`, units: [unit.cells], target: cells3, elim, hideElim: true },
+    ],
+    check: { cells: cells3, tri, elim },
+  };
+}
+
+function lessonXWing() {
+  const g = toGrid(TUT_GRIDS.xwing), v = 3, r1 = 0, r2 = 7, k1 = 3, k2 = 4;
+  const cand = candidates(g);
+  const rowsV = [r1, r2];
+  const corners = [r1 * 9 + k1, r1 * 9 + k2, r2 * 9 + k1, r2 * 9 + k2];
+  const elim = [];
+  for (const k of [k1, k2]) for (const j of colCells(k))
+    if (!g[j] && (cand[j] & (1 << v)) && ROW(j) !== r1 && ROW(j) !== r2) elim.push([j, v]);
+  const spots = r => rowCells(r).filter(j => !g[j] && (cand[j] & (1 << v)));
+  const noteCells = [...new Set([...rowCells(r1), ...rowCells(r2), ...colCells(k1), ...colCells(k2)])].filter(j => !g[j]);
+  const diagA = [corners[0], corners[3]], diagB = [corners[1], corners[2]];
+  const lines = [rowCells(r1), rowCells(r2)];
+  return {
+    title: 'X-Wing', level: 'Esperto', grid: g, noteCells, noteDigit: v,
+    steps: [
+      { text: `L'X-Wing ragiona su <b>un solo numero</b> alla volta: qui il <b>${v}</b> (gli altri appunti sono nascosti). Nella riga ${r1 + 1} il ${v} può andare in sole <b>due</b> caselle.`, units: [lines[0]], target: spots(r1) },
+      { text: `Anche nella riga ${r2 + 1} il ${v} ha solo due posti possibili, e sono nelle <b>stesse due colonne</b> (la ${k1 + 1} e la ${k2 + 1}). Le quattro caselle formano un rettangolo.`, units: lines, target: corners },
+      { text: `In ogni riga il ${v} va in una sola delle due caselle. Possibilità 1: il ${v} sta in ${where(diagA[0])} e in ${where(diagA[1])} (una diagonale del rettangolo).`, units: lines, target: diagA },
+      { text: `Possibilità 2: il ${v} sta nell'altra diagonale, in ${where(diagB[0])} e in ${where(diagB[1])}. Non ce ne sono altre, ma non sappiamo ancora quale sia quella giusta.`, units: lines, target: diagB },
+      { text: `In <b>entrambi</b> i casi, le colonne ${k1 + 1} e ${k2 + 1} avranno il loro ${v} nelle righe ${r1 + 1} e ${r2 + 1}. Quindi in tutte le altre caselle di quelle due colonne il ${v} non può andare: cancelliamolo da ${elim.map(e => where(e[0])).join(' e ')}.`, units: [colCells(k1), colCells(k2)], target: corners, elim },
+      { text: `Fatto: ${elim.length} candidati in meno. Funziona anche scambiando righe e colonne. Si chiama X-Wing perché le due diagonali del rettangolo formano una X.`, units: [colCells(k1), colCells(k2)], target: corners, elim, hideElim: true },
+    ],
+    check: { v, rowsV, corners, elim },
+  };
+}
+
 function lessonTips() {
   return {
     title: 'Consigli', level: '', grid: null,
@@ -1114,7 +1167,7 @@ function lessonTips() {
       { text: '<b>Parti dai numeri più frequenti.</b> Se il 5 compare già 7 volte nella griglia, è facile trovare dove vanno gli ultimi due.' },
       { text: '<b>Cerca prima i singoli.</b> Guarda le caselle con un solo numero possibile (singolo nudo) e i numeri con un solo posto in un riquadro, riga o colonna (singolo nascosto).' },
       { text: '<b>Dopo ogni numero inserito, riguarda le vicinanze.</b> Un numero nuovo toglie candidati a tutta la sua riga, colonna e riquadro e spesso sblocca altre caselle.' },
-      { text: '<b>Quando sei bloccato, usa gli appunti.</b> Premi ✎ Compila appunti, poi cerca coppie nude e puntamenti per ridurre i candidati.' },
+      { text: '<b>Quando sei bloccato, usa gli appunti.</b> Premi ✎ Compila appunti, poi cerca coppie e terne nude, puntamenti e, nei casi più duri, X-Wing per ridurre i candidati.' },
       { text: '<b>Non tirare a indovinare.</b> Ogni sudoku ha una sola soluzione e si risolve con la logica. Se hai un dubbio, ✔ Verifica ti mostra gli errori e 💡 Suggerisci ti spiega il prossimo passo.' },
     ],
   };
@@ -1123,7 +1176,7 @@ function lessonTips() {
 let tut = null; // { lessons, li, si, cells }
 
 function buildLessons() {
-  return [lessonRules(), lessonNaked(), lessonHidden(), lessonPair(), lessonPoint(), lessonTips()];
+  return [lessonRules(), lessonNaked(), lessonHidden(), lessonPair(), lessonPoint(), lessonTriple(), lessonXWing(), lessonTips()];
 }
 
 function renderTutorial() {
