@@ -477,31 +477,8 @@ function renderStats() {
 function openStats() { renderStats(); $('statsOverlay').classList.add('show'); }
 function closeStats() { $('statsOverlay').classList.remove('show'); }
 
-function exportStats() {
-  const blob = new Blob([JSON.stringify(STATS, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `sudoku-statistiche-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
-
-function importStats(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    let data = null;
-    try { data = normalizeStats(JSON.parse(reader.result)); } catch (e) {}
-    if (!data) { alert('Il file non contiene statistiche valide.'); return; }
-    if (!confirm('Sostituire le statistiche attuali con quelle del file?')) return;
-    STATS = data;
-    saveStats();
-    renderStats();
-  };
-  reader.readAsText(file);
-}
-
 function resetStats() {
-  if (!confirm('Azzerare tutte le statistiche? Questa operazione non si può annullare (a meno di avere un backup).')) return;
+  if (!confirm('Azzerare tutte le statistiche? Questa operazione non si può annullare.')) return;
   STATS = emptyStats();
   saveStats();
   renderStats();
@@ -907,12 +884,6 @@ $('notesOverlay').addEventListener('click', e => { if (e.target === e.currentTar
 document.querySelectorAll('.statsBtn').forEach(b => b.addEventListener('click', openStats));
 $('statsClose').addEventListener('click', closeStats);
 $('statsOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeStats(); });
-$('exportBtn').addEventListener('click', exportStats);
-$('importBtn').addEventListener('click', () => $('importFile').click());
-$('importFile').addEventListener('change', e => {
-  if (e.target.files[0]) importStats(e.target.files[0]);
-  e.target.value = '';
-});
 $('resetBtn').addEventListener('click', resetStats);
 $('showErrors').addEventListener('change', () => {
   try { localStorage.setItem('sudoku-showErrors', $('showErrors').checked ? '1' : '0'); } catch (e) {}
