@@ -98,7 +98,7 @@ async function submitRanked() {
   };
   if (game.hints > 0) return say('Con i suggerimenti la partita non entra in classifica.');
   if (!ACC) {
-    return say('Crea un profilo o accedi per registrare questo tempo in classifica.',
+    return say(`Il tuo tempo è ${fmtMs(game.finalMs)}. Crea un profilo o accedi per registrarlo in classifica.`,
       el('button', { class: 'active', text: 'Accedi / Crea profilo' }));
   }
   say('Registro il tuo tempo…');
@@ -113,11 +113,11 @@ async function submitRanked() {
       : 'Con i suggerimenti la partita non entra in classifica.');
   }
   if (r.status === 401) {
-    return say('Accedi per registrare questo tempo in classifica.', el('button', { class: 'active', text: 'Accedi / Crea profilo' }));
+    return say(`Il tuo tempo è ${fmtMs(game.finalMs)}. Accedi per registrarlo in classifica.`, el('button', { class: 'active', text: 'Accedi / Crea profilo' }));
   }
   if (r.status === 404) return say('Partita scaduta (oltre 24 ore): il tempo non è stato registrato.');
   if (r.status === 409) return say('Questo risultato è già stato registrato.');
-  if (r.status === 0) return say('Server non raggiungibile: il tempo non è stato registrato.', el('button', { text: 'Riprova' }));
+  if (r.status === 0) return say(`Server non raggiungibile: il tempo (${fmtMs(game.finalMs)}) non è stato registrato.`, el('button', { text: 'Riprova' }));
   return say(r.data.message || 'Non è stato possibile registrare il tempo.');
 }
 

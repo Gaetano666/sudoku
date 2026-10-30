@@ -38,6 +38,7 @@ async function newGame(level) {
     hinted: Array(81).fill(false),
     elapsed: 0, errors: 0, hints: 0, won: false,
     ranked: !!remote, gameId: remote ? remote.gameId : null,
+    t0: Date.now(),                                // inizio partita: in classifica il tempo è quello reale
   };
   history = [];
   checkMarks.clear();
@@ -179,7 +180,10 @@ function afterMove() {
   if (S.values.every((v, i) => v === S.solution[i])) {
     S.won = true;
     stopTimer();
-    $('winText').textContent = `Livello ${LEVELS[S.level].name} completato in ${fmt(S.elapsed)} con ${S.errors} errori e ${S.hints} suggerimenti.`;
+    if (S.ranked) { S.finalMs = Date.now() - S.t0; S.elapsed = Math.round(S.finalMs / 1000); }
+    // In una partita in classifica il tempo preciso compare una sola volta, nella riga sotto.
+    const timeText = S.ranked && S.hints === 0 ? '' : ` in ${fmt(S.elapsed)}`;
+    $('winText').textContent = `Livello ${LEVELS[S.level].name} completato${timeText} con ${S.errors} errori e ${S.hints} suggerimenti.`;
     const record = statsWin(S);
     $('winRecord').textContent = !record ? ''
       : record.prev === null ? '🏆 Primo record per questo livello!'
@@ -303,14 +307,30 @@ function fmt(s) {
   const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+// Le partite in classifica durano finché il server tiene aperta la partita (24 ore).
+const RANKED_MAX_MS = 23.5 * 3600 * 1000;
+
+function tick() {
+  if (!S || S.won) return;
+  if (S.ranked) {
+    // Il server misura il tempo reale dall'inizio, quindi anche il cronometro non si ferma mai:
+    // così il tempo che vedi è quello che finisce in classifica.
+    if (Date.now() - S.t0 > RANKED_MAX_MS) {
+      S.ranked = false;
+      setMsg('Sono passate più di 24 ore: la partita non è più in classifica.');
+      render();
+    }
+    S.elapsed = Math.max(0, Math.floor((Date.now() - S.t0) / 1000));
+  } else {
+    if (document.hidden || document.querySelector('.overlay.show')) return;
+    S.elapsed++;
+  }
+  $('timer').textContent = fmt(S.elapsed);
+  if (S.elapsed % 5 === 0) save();
+}
 function startTimer() {
   stopTimer();
-  timerId = setInterval(() => {
-    if (!S || S.won || document.hidden || document.querySelector('.overlay.show')) return;
-    S.elapsed++;
-    $('timer').textContent = fmt(S.elapsed);
-    if (S.elapsed % 5 === 0) save();
-  }, 1000);
+  timerId = setInterval(tick, 1000);
 }
 function stopTimer() { if (timerId) clearInterval(timerId); timerId = null; }
 
@@ -907,7 +927,9 @@ try { $('showErrors').checked = localStorage.getItem('sudoku-showErrors') === '1
   const saved = load();
   if (saved && !saved.won) {
     S = saved;
+    if (S.ranked && !S.t0) S.t0 = Date.now() - S.elapsed * 1000;
     startTimer();
+    tick();
     render();
     const warning = deadEndWarning();
     setMsg(warning || 'Partita precedente ripristinata.', !!warning);
