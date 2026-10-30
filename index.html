@@ -183,6 +183,50 @@
   .overlay .card.info .how p { color: var(--ink); }
   .overlay .card.info .how strong { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .overlay .card.info #notesInfoCount { color: var(--hint); font-weight: 600; }
+  .overlay .card.tut {
+    max-width: 560px; width: 100%; text-align: left; padding: 20px;
+    max-height: calc(100vh - 32px); overflow-y: auto;
+    --tsize: min(84vw, 440px);
+  }
+  .tut-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .tut-head h3 { font-size: 22px; margin: 0; }
+  .tut-head button { flex: none; padding: 6px 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chips button { flex: none; padding: 6px 10px; font-size: 13px; }
+  .tboard {
+    width: var(--tsize); height: var(--tsize); margin: 0 auto 14px;
+    display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(9, 1fr);
+    border: 3px solid var(--line-strong); border-radius: 6px; overflow: hidden; background: var(--panel);
+  }
+  .tc {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    font-size: calc(var(--tsize) / 9 * 0.56); color: var(--given); font-weight: 600;
+  }
+  .tc.c2, .tc.c5 { border-right: 2px solid var(--line-strong); }
+  .tc.c8 { border-right: none; }
+  .tc.r2, .tc.r5 { border-bottom: 2px solid var(--line-strong); }
+  .tc.r8 { border-bottom: none; }
+  .tc.u { background: var(--same); }
+  .tc.m { color: var(--accent); background: var(--sel); }
+  .tc.t { box-shadow: inset 0 0 0 3px var(--accent); background: var(--sel); }
+  .tc.placed { color: var(--hint); }
+  .tc.x::after {
+    content: "✕"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--error); font-size: calc(var(--tsize) / 9 * 0.6); font-weight: 700; opacity: .85;
+  }
+  .tnotes {
+    position: absolute; inset: 1px; display: grid;
+    grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    font-size: calc(var(--tsize) / 9 * 0.3); font-weight: 400; color: var(--muted); line-height: 1;
+  }
+  .tnotes span { display: flex; align-items: center; justify-content: center; }
+  .tnotes span.k { color: var(--accent); font-weight: 700; }
+  .tnotes span.s { color: var(--error); text-decoration: line-through; font-weight: 700; }
+  .tut-text { min-height: 96px; font-size: 15px; line-height: 1.55; padding: 12px 14px; border-radius: 8px; background: var(--btn); }
+  .tut-text b { color: var(--accent); }
+  .tut-nav { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .tut-nav .count { flex: none; font-size: 13px; color: var(--muted); min-width: 80px; text-align: center; }
   .overlay .card.stats {
     max-width: 640px; width: 100%; text-align: left; padding: 22px;
     max-height: calc(100vh - 32px); overflow-y: auto; user-select: text;
@@ -226,6 +270,7 @@
       </div>
       <div class="row" style="margin-top: 8px">
         <button class="statsBtn">📊 Statistiche</button>
+        <button id="tutBtn">📖 Tutorial</button>
       </div>
     </div>
 
@@ -269,6 +314,23 @@
     </div>
     <div class="row" style="margin-top: 8px">
       <button class="statsBtn">📊 Statistiche</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="tutOverlay">
+  <div class="card tut">
+    <div class="tut-head">
+      <h3>📖 Tutorial</h3>
+      <button id="tutClose">✕</button>
+    </div>
+    <div class="chips" id="tutChips"></div>
+    <div class="tboard" id="tutBoard"></div>
+    <div class="tut-text" id="tutText"></div>
+    <div class="tut-nav">
+      <button id="tutPrev">‹ Indietro</button>
+      <span class="count" id="tutCount"></span>
+      <button id="tutNext" class="active">Avanti ›</button>
     </div>
   </div>
 </div>
@@ -928,6 +990,222 @@ function resetStats() {
   renderStats();
 }
 
+// ---------- Tutorial ----------
+// Gli esempi sono situazioni reali, estratte da sudoku con soluzione unica.
+// Le deduzioni mostrate (numeri esclusi, candidati cancellati) sono ricalcolate dal codice.
+const TUT_GRIDS = {
+  naked:  '105047239703060015000013000004100000009485100000006300000670000810050907537920601',
+  hidden: '000002000460009800030000049098005430600070008073400520310000060004600092000900000',
+  pair:   '075304100042185007080706000400239700000478000007651002000507090700943500004802370',
+  point:  '070800950609105800500094600900500176356000248010000593002350700000008405065007380',
+};
+const toGrid = str => str.split('').map(Number);
+const where = i => `riga ${ROW(i) + 1}, colonna ${COL(i) + 1}`;
+const digitsOf = m => { const a = []; for (let v = 1; v <= 9; v++) if (m & (1 << v)) a.push(v); return a; };
+const valuesIn = (g, cells) => [...new Set(cells.map(j => g[j]).filter(Boolean))].sort((a, b) => a - b);
+const rowCells = r => UNITS[r].cells;
+const colCells = c => UNITS[9 + c].cells;
+const boxCells = b => UNITS[18 + b].cells;
+const joinD = a => a.length ? a.join(', ') : 'nessuno';
+
+function lessonRules() {
+  const g = toGrid(TUT_GRIDS.naked), i = 45;
+  return {
+    title: 'Le regole', level: 'Base', grid: g,
+    steps: [
+      { text: 'Il Sudoku è una griglia di 9×9 caselle divisa in 9 riquadri da 3×3 (quelli con il bordo più spesso). Lo scopo è riempirla con i numeri da 1 a 9.' },
+      { text: `<b>Regola 1:</b> in ogni <b>riga</b> i numeri da 1 a 9 compaiono una volta sola. Qui è evidenziata la riga ${ROW(i) + 1}: ha già dei numeri, che quindi non possono ripetersi nelle sue caselle vuote.`, units: [rowCells(ROW(i))] },
+      { text: `<b>Regola 2:</b> lo stesso vale per ogni <b>colonna</b>. Qui è evidenziata la colonna ${COL(i) + 1}.`, units: [colCells(COL(i))] },
+      { text: `<b>Regola 3:</b> lo stesso vale per ogni <b>riquadro</b> 3×3. Qui è evidenziato quello che contiene la casella in ${where(i)}.`, units: [boxCells(BOX(i))] },
+      { text: 'Un sudoku ben fatto ha <b>una sola soluzione</b>: si arriva sempre alla fine con la logica, senza mai tirare a indovinare. Le prossime lezioni mostrano le tecniche per farlo.' },
+    ],
+  };
+}
+
+function lessonNaked() {
+  const g = toGrid(TUT_GRIDS.naked), i = 45;
+  const parts = [['Nella riga', rowCells(ROW(i))], ['Nella colonna', colCells(COL(i))], ['Nel riquadro', boxCells(BOX(i))]];
+  let struck = 0;
+  const steps = [{
+    text: `Guarda la casella evidenziata (${where(i)}). Quale numero può contenere? All'inizio potrebbe essere qualsiasi numero da 1 a 9: togliamo quelli impossibili.`,
+    target: [i], custom: { cell: i, normal: ALL, struck: 0 },
+  }];
+  for (const [label, cells] of parts) {
+    const vals = valuesIn(g, cells);
+    const added = digitsOf(vals.reduce((m, v) => m | (1 << v), 0) & ~struck);
+    for (const v of vals) struck |= 1 << v;
+    steps.push({
+      text: `${label} ci sono già: <b>${joinD(vals)}</b>. ${added.length ? `Cancelliamo ${joinD(added)} dai candidati della casella.` : 'Nessun nuovo numero da cancellare.'}`,
+      units: [cells], target: [i], custom: { cell: i, normal: ALL & ~struck, struck },
+    });
+  }
+  const left = digitsOf(ALL & ~struck);
+  steps.push({
+    text: `È rimasto un solo candidato: il <b>${left[0]}</b>. Non può andare altro in questa casella, quindi lo scriviamo. Si chiama <b>singolo nudo</b>: una casella con un unico numero possibile.`,
+    target: [i], place: { cell: i, d: left[0] },
+  });
+  return { title: 'Singolo nudo', level: 'Base', grid: g, steps, check: { cell: i, d: left[0], count: left.length } };
+}
+
+function lessonHidden() {
+  const g = toGrid(TUT_GRIDS.hidden), b = 3, v = 4, sp = 37;
+  const cells = boxCells(b);
+  const blocked = cells.filter(j => !g[j] && j !== sp);
+  return {
+    title: 'Singolo nascosto', level: 'Base', grid: g,
+    steps: [
+      { text: `Questa volta guardiamo un intero riquadro (quello evidenziato) e ci chiediamo: <b>dove può andare il ${v}?</b>`, units: [cells] },
+      { text: `I ${v} già presenti nella griglia sono evidenziati. Un ${v} in una riga o in una colonna vieta il ${v} a tutta quella riga e colonna: le caselle del riquadro contrassegnate con ✕ non possono quindi contenere il ${v}.`, units: [cells], match: v, blocked },
+      { text: `Nel riquadro resta una sola casella libera per il ${v}: quella in ${where(sp)}. Il ${v} deve stare in questo riquadro e non ha altro posto, quindi va <b>lì</b>.`, units: [cells], match: v, blocked, place: { cell: sp, d: v } },
+      { text: `Si chiama <b>singolo nascosto</b>: la casella potrebbe contenere anche altri numeri (per questo è "nascosto"), ma per il ${v} è l'unica possibilità nel riquadro. Lo stesso ragionamento funziona anche con una riga o una colonna intera.` },
+    ],
+    check: { cell: sp, d: v },
+  };
+}
+
+function lessonPair() {
+  const g = toGrid(TUT_GRIDS.pair), r = 8, A = 76, B = 80;
+  const cand = candidates(g), row = rowCells(r);
+  const empt = row.filter(j => !g[j]);
+  const pair = digitsOf(cand[A]);
+  const elim = [];
+  for (const j of empt) if (j !== A && j !== B) for (const d of pair) if (cand[j] & (1 << d)) elim.push([j, d]);
+  const rest = empt.filter(j => j !== A && j !== B).map(j => {
+    const left = digitsOf(cand[j]).filter(d => !pair.includes(d));
+    return `${where(j)}: ${joinD(left)}`;
+  });
+  return {
+    title: 'Coppia nuda', level: 'Avanzato', grid: g, noteCells: empt,
+    steps: [
+      { text: `Qui i numeri semplici non bastano più, quindi usiamo gli appunti. Nella riga ${r + 1} le caselle vuote mostrano i numeri ancora possibili (i candidati).`, units: [row] },
+      { text: `Guarda le due caselle evidenziate (${where(A)} e ${where(B)}): hanno <b>solo</b> gli stessi due candidati, <b>${pair[0]}</b> e <b>${pair[1]}</b>. È una <b>coppia nuda</b>.`, units: [row], target: [A, B], hl: pair },
+      { text: `Una delle due caselle conterrà il ${pair[0]} e l'altra il ${pair[1]} (non sappiamo ancora quale). In ogni caso questi due numeri sono "presi" da queste due caselle: nessun'altra casella della riga può contenerli.`, units: [row], target: [A, B], hl: pair },
+      { text: `Possiamo quindi cancellare ${pair[0]} e ${pair[1]} dagli appunti delle altre caselle della riga (barrati in rosso).`, units: [row], target: [A, B], elim },
+      { text: `Risultato: meno candidati, quindi deduzioni più facili. Nelle altre caselle della riga restano: ${rest.join(' · ')}.`, units: [row], target: [A, B], elim, hideElim: true },
+    ],
+    check: { pair, A, B, elim },
+  };
+}
+
+function lessonPoint() {
+  const g = toGrid(TUT_GRIDS.point), b = 7, v = 4;
+  const cand = candidates(g), cells = boxCells(b);
+  const sp = cells.filter(j => !g[j] && (cand[j] & (1 << v)));
+  const r = ROW(sp[0]), line = rowCells(r);
+  const elim = line.filter(j => !g[j] && BOX(j) !== b && (cand[j] & (1 << v))).map(j => [j, v]);
+  const noteCells = [...new Set([...cells, ...line])].filter(j => !g[j]);
+  return {
+    title: 'Puntamento', level: 'Avanzato', grid: g, noteCells, noteDigit: v,
+    steps: [
+      { text: `In questo esempio guardiamo solo i candidati del <b>${v}</b> (gli altri appunti sono nascosti per chiarezza). Partiamo dal riquadro evidenziato.`, units: [cells] },
+      { text: `Nel riquadro il ${v} può andare <b>solo</b> in queste ${sp.length} caselle (${sp.map(where).join(' oppure ')}).`, units: [cells], target: sp },
+      { text: `Sono tutte sulla <b>stessa riga</b> (la riga ${r + 1}). Quindi il ${v} di questo riquadro, in qualunque di queste caselle vada, starà in questa riga.`, units: [line], target: sp },
+      { text: `Ma in una riga il ${v} può esserci una volta sola: nelle caselle della riga <b>fuori dal riquadro</b> il ${v} non può andare. Cancelliamo il ${v} da ${elim.map(e => where(e[0])).join(' e ')}.`, units: [line], target: sp, elim },
+      { text: `Fatto: un candidato in meno. Funziona anche con 3 caselle allineate e con le colonne. Si chiama <b>puntamento</b>, perché i candidati del riquadro "puntano" lungo la riga o la colonna.`, units: [line], target: sp, elim, hideElim: true },
+    ],
+    check: { elim, v, sp },
+  };
+}
+
+function lessonTips() {
+  return {
+    title: 'Consigli', level: '', grid: null,
+    steps: [
+      { text: '<b>Parti dai numeri più frequenti.</b> Se il 5 compare già 7 volte nella griglia, è facile trovare dove vanno gli ultimi due.' },
+      { text: '<b>Cerca prima i singoli.</b> Guarda le caselle con un solo numero possibile (singolo nudo) e i numeri con un solo posto in un riquadro, riga o colonna (singolo nascosto).' },
+      { text: '<b>Dopo ogni numero inserito, riguarda le vicinanze.</b> Un numero nuovo toglie candidati a tutta la sua riga, colonna e riquadro e spesso sblocca altre caselle.' },
+      { text: '<b>Quando sei bloccato, usa gli appunti.</b> Premi ✎ Compila appunti, poi cerca coppie nude e puntamenti per ridurre i candidati.' },
+      { text: '<b>Non tirare a indovinare.</b> Ogni sudoku ha una sola soluzione e si risolve con la logica. Se hai un dubbio, ✔ Verifica ti mostra gli errori e 💡 Suggerisci ti spiega il prossimo passo.' },
+    ],
+  };
+}
+
+let tut = null; // { lessons, li, si, cells }
+
+function buildLessons() {
+  return [lessonRules(), lessonNaked(), lessonHidden(), lessonPair(), lessonPoint(), lessonTips()];
+}
+
+function renderTutorial() {
+  const lesson = tut.lessons[tut.li];
+  const step = lesson.steps[tut.si];
+  const last = tut.si === lesson.steps.length - 1;
+  const isLastLesson = tut.li === tut.lessons.length - 1;
+
+  $('tutChips').innerHTML = tut.lessons.map((l, k) =>
+    `<button data-k="${k}" class="${k === tut.li ? 'active' : ''}">${k + 1}. ${l.title}${l.level ? ` · ${l.level}` : ''}</button>`).join('');
+
+  const board = $('tutBoard');
+  board.style.display = lesson.grid ? '' : 'none';
+  if (lesson.grid) {
+    const g = lesson.grid, cand = candidates(g);
+    const inList = (list, i) => !!list && list.includes(i);
+    const unitSet = new Set((step.units || []).flat());
+    const elimSet = new Set((step.elim || []).map(e => e[0] * 10 + e[1]));
+    // kind: null = cifra assente, '' = normale, 'k' = evidenziata, 's' = barrata
+    const notesHtml = kindOf => {
+      let h = '<div class="tnotes">';
+      for (let n = 1; n <= 9; n++) {
+        const k = kindOf(n);
+        h += `<span class="${k || ''}">${k === null ? '' : n}</span>`;
+      }
+      return h + '</div>';
+    };
+    for (let i = 0; i < 81; i++) {
+      const el = tut.cells[i], cls = [`tc r${ROW(i)} c${COL(i)}`];
+      if (unitSet.has(i)) cls.push('u');
+      if (inList(step.target, i)) cls.push('t');
+      if (step.match && g[i] === step.match) cls.push('m');
+      if (inList(step.blocked, i)) cls.push('x');
+      let html = '';
+      if (step.place && step.place.cell === i) { html = step.place.d; cls.push('placed'); }
+      else if (g[i]) html = g[i];
+      else if (step.custom && step.custom.cell === i) {
+        const c = step.custom;
+        html = notesHtml(n => (c.struck & (1 << n)) ? 's' : (c.normal & (1 << n)) ? '' : null);
+      } else if (lesson.noteCells && lesson.noteCells.includes(i)) {
+        html = notesHtml(n => {
+          if (!(cand[i] & (1 << n))) return null;
+          if (lesson.noteDigit && n !== lesson.noteDigit) return null;
+          if (elimSet.has(i * 10 + n)) return step.hideElim ? null : 's';
+          if (inList(step.target, i) && ((step.hl && step.hl.includes(n)) || lesson.noteDigit)) return 'k';
+          return '';
+        });
+      }
+      el.className = cls.join(' ');
+      el.innerHTML = html;
+    }
+  }
+  $('tutText').innerHTML = step.text;
+  $('tutCount').textContent = `Passo ${tut.si + 1} di ${lesson.steps.length}`;
+  $('tutPrev').disabled = tut.si === 0 && tut.li === 0;
+  $('tutNext').textContent = !last ? 'Avanti ›' : isLastLesson ? 'Fine ✓' : 'Prossima lezione ›';
+}
+
+function tutGo(delta) {
+  const lesson = tut.lessons[tut.li];
+  const n = tut.si + delta;
+  if (n >= 0 && n < lesson.steps.length) tut.si = n;
+  else if (n < 0 && tut.li > 0) { tut.li--; tut.si = tut.lessons[tut.li].steps.length - 1; }
+  else if (n >= lesson.steps.length) {
+    if (tut.li === tut.lessons.length - 1) { closeTutorial(); return; }
+    tut.li++; tut.si = 0;
+  }
+  renderTutorial();
+}
+
+function openTutorial(li = 0) {
+  if (!tut) {
+    tut = { lessons: buildLessons(), li: 0, si: 0, cells: [] };
+    const board = $('tutBoard');
+    for (let i = 0; i < 81; i++) { const d = document.createElement('div'); board.appendChild(d); tut.cells.push(d); }
+  }
+  tut.li = li; tut.si = 0;
+  renderTutorial();
+  $('tutOverlay').classList.add('show');
+}
+function closeTutorial() { $('tutOverlay').classList.remove('show'); }
+
 // ---------- Input ----------
 function input(v, forceNote) {
   if (selected < 0) { setMsg('Seleziona prima una casella.'); return; }
@@ -936,6 +1214,12 @@ function input(v, forceNote) {
 }
 
 document.addEventListener('keydown', e => {
+  if ($('tutOverlay').classList.contains('show')) {
+    if (e.key === 'Escape') closeTutorial();
+    else if (e.key === 'ArrowRight' || e.key === 'Enter') tutGo(1);
+    else if (e.key === 'ArrowLeft') tutGo(-1);
+    return;
+  }
   if ($('notesOverlay').classList.contains('show')) {
     if (e.key === 'Escape' || e.key === 'Enter') closeNotesInfo();
     return;
@@ -976,6 +1260,15 @@ $('undoBtn').addEventListener('click', undo);
 $('hintBtn').addEventListener('click', hint);
 $('autoNotesBtn').addEventListener('click', autoNotes);
 $('checkBtn').addEventListener('click', verify);
+$('tutBtn').addEventListener('click', () => openTutorial(0));
+$('tutClose').addEventListener('click', closeTutorial);
+$('tutPrev').addEventListener('click', () => tutGo(-1));
+$('tutNext').addEventListener('click', () => tutGo(1));
+$('tutChips').addEventListener('click', e => {
+  const b = e.target.closest('button[data-k]');
+  if (b) { tut.li = +b.dataset.k; tut.si = 0; renderTutorial(); }
+});
+$('tutOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeTutorial(); });
 $('notesInfoClose').addEventListener('click', closeNotesInfo);
 $('notesOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeNotesInfo(); });
 document.querySelectorAll('.statsBtn').forEach(b => b.addEventListener('click', openStats));
