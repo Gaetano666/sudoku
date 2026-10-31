@@ -292,3 +292,24 @@ test('nomi non consentiti e CSP stretta', async () => {
   assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/i.test(html), 'script inline');
   assert.ok(!/<style[\s>]/i.test(html) && !/\sstyle="/i.test(html), 'stile inline');
 });
+
+test('stato partita: ora di inizio del server, senza rivelare la soluzione', async () => {
+  const { app, clock } = await makeApp();
+  const { body: { token } } = await register(app);
+  const p = await play(app, token, { n: 60 });
+  clock.t += 5_000;
+  const st = await app.inject({ method: 'GET', url: `/api/games/${p.game.gameId}`, headers: ip(60) });
+  assert.equal(st.statusCode, 200);
+  const body = json(st);
+  assert.equal(body.level, 'easy');
+  assert.equal(body.startedAt, p.game.startedAt);
+  assert.equal(body.serverNow - body.startedAt, 5_000);
+  assert.equal(body.finished, false);
+  assert.equal(body.solution, undefined);
+  assert.equal(body.puzzle, undefined);
+
+  clock.t += 60_000;
+  await p.finish(p.solution);
+  assert.equal(json(await app.inject({ method: 'GET', url: `/api/games/${p.game.gameId}`, headers: ip(60) })).finished, true);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/games/inesistente', headers: ip(60) })).statusCode, 404);
+});

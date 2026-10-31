@@ -898,12 +898,15 @@ try { $('showErrors').checked = localStorage.getItem('sudoku-showErrors') === '1
   const saved = load();
   if (saved && !saved.won) {
     S = saved;
-    if (S.ranked && !S.t0) S.t0 = Date.now() - S.elapsed * 1000;
+    if (S.ranked && !S.t0) S.t0 = Date.now() - S.elapsed * 1000;   // partita salvata da una versione precedente
+    const sync = await syncRankedGame(S);
     startTimer();
     tick();
     render();
     const warning = deadEndWarning();
-    setMsg(warning || 'Partita precedente ripristinata.', !!warning);
+    setMsg(warning || (sync === 'expired'
+      ? 'Partita ripristinata, ma il server non la considera più valida: continua fuori classifica.'
+      : 'Partita precedente ripristinata.'), !!warning);
   } else {
     newGame('easy');
   }

@@ -205,6 +205,16 @@ function buildApp({ redis, config, now = Date.now, logger = false }) {
     return { gameId: id, level: req.body.level, puzzle: puzzle.join(''), startedAt };
   });
 
+  // Stato di una partita: serve al browser, quando riapre una partita salvata, per riallineare il cronometro
+  // all'inizio registrato dal server. Non rivela il sudoku né la soluzione.
+  app.get('/api/games/:id', { schema: { params: { type: 'object', properties: { id: { type: 'string', maxLength: 40 } } } } }, async (req, reply) => {
+    if (!(await allow(`rl:gstatus:${clientIp(req)}`, 120, 600))) return err(reply, 429, 'rate_limited', 'Troppe richieste, riprova più tardi');
+    const [level, startedAt] = await redis.hmget(`game:${req.params.id}`, 'level', 'startedAt');
+    if (!level) return err(reply, 404, 'game_not_found', 'Partita non trovata o scaduta');
+    const finished = (await redis.exists(`gamedone:${req.params.id}`)) === 1;
+    return { level, startedAt: Number(startedAt), serverNow: now(), finished };
+  });
+
   app.post('/api/games/:id/finish', {
     schema: {
       params: { type: 'object', properties: { id: { type: 'string', maxLength: 40 } } },

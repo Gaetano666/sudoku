@@ -84,6 +84,23 @@ async function requestRankedGame(level) {
   return null;
 }
 
+// Riallinea il cronometro di una partita in classifica all'inizio registrato dal server. Serve quando si
+// riapre una partita salvata (anche da una versione precedente del gioco, che non conservava l'ora di inizio).
+// Restituisce 'expired' se il server non la considera più valida: la partita continua fuori classifica.
+async function syncRankedGame(game) {
+  if (!ONLINE || !game.ranked) return null;
+  const r = await api('GET', `api/games/${encodeURIComponent(game.gameId)}`, undefined, 4000);
+  if (r.ok && !r.data.finished) {
+    game.t0 = Date.now() - (r.data.serverNow - r.data.startedAt);   // orologio del server, non del dispositivo
+    return 'synced';
+  }
+  if (r.status === 404 || (r.ok && r.data.finished)) {
+    game.ranked = false;
+    return 'expired';
+  }
+  return null;                                                        // server irraggiungibile: si usa l'ora salvata
+}
+
 // Mostra nella finestra di vittoria l'esito della registrazione del tempo.
 async function submitRanked() {
   const box = $('winRank'), actions = $('winRankActions');
@@ -105,7 +122,7 @@ async function submitRanked() {
   const r = await api('POST', `api/games/${encodeURIComponent(game.gameId)}/finish`, { solution: game.solution.join(''), hints: game.hints });
   if (r.ok && r.data.ranked) {
     const k = r.data.ranks;
-    return say(`🏆 Tempo in classifica: ${fmtMs(r.data.timeMs)} (${k.all}° assoluto · ${k.week}° della settimana · ${k.month}° del mese). ${r.data.personalBest ? 'Nuovo tuo record personale!' : 'Il tuo miglior tempo resta quello precedente.'}`);
+    return say(`🏆 Tempo in classifica: ${fmtMs(r.data.timeMs)} (${k.all}° assoluto · ${k.week}° della settimana · ${k.month}° del mese). ${r.data.personalBest ? 'Hai fatto il tuo nuovo miglior tempo!' : 'Il tuo miglior tempo resta quello precedente.'}`);
   }
   if (r.ok) {
     return say(r.data.reason === 'too_fast'
