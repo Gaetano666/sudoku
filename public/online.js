@@ -221,7 +221,7 @@ async function openProfile() {
       el('td', { class: 'num', text: b ? `${b.rank}°` : '–' }));
   });
   $('profileBests').replaceChildren(el('table', {},
-    el('thead', {}, el('tr', {}, el('th', { text: 'Il tuo meglio' }), el('th', { text: 'Tempo' }), el('th', { text: 'Posizione' }))),
+    el('thead', {}, el('tr', {}, el('th', { text: 'Livello' }), el('th', { text: 'Miglior tempo' }), el('th', { text: 'Posizione' }))),
     el('tbody', {}, ...rows)));
 }
 function closeProfile() { $('profileOverlay').classList.remove('show'); }
